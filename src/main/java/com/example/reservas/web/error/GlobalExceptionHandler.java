@@ -4,6 +4,7 @@ import com.example.reservas.service.NotFoundException;
 import com.example.reservas.service.ValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -61,6 +62,13 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ApiError> build(HttpStatus status, String code, String message, org.springframework.web.context.request.WebRequest req, Map<String,String> details) {
         String path = req.getDescription(false).replace("uri=", "");
+        if (details == null) {
+            details = new HashMap<>();
+        }
+        String traceId = MDC.get("traceId");
+        if (traceId != null && !traceId.isBlank()) {
+            details.put("traceId", traceId);
+        }
         ApiError body = new ApiError(OffsetDateTime.now().toString(), path, status.value(), code, message, details);
         return ResponseEntity.status(status).body(body);
     }

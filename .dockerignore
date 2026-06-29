@@ -1,0 +1,12 @@
+.git
+.gitignore
+.github
+.idea
+.vscode
+node_modules
+frontend/node_modules
+target
+build
+*.log
+Dockerfile*
+README.md

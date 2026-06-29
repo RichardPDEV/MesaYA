@@ -13,11 +13,15 @@ services:
     ports: ["6379:6379"]
   api:
     build: .
+    env_file: .env
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/reservas
-      SPRING_DATASOURCE_USERNAME: reservas
-      SPRING_DATASOURCE_PASSWORD: reservas
-      SPRING_DATA_REDIS_HOST: redis
+      - DB_URL=jdbc:postgresql://postgres:5432/reservas
+      - DB_USERNAME=reservas
+      - DB_PASSWORD=changeme
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - APP_JWT_SECRET
+      - SPRING_PROFILES_ACTIVE=prod
     depends_on: [postgres, redis]
     ports: ["8080:8080"]
 

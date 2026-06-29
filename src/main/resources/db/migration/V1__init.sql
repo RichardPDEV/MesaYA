@@ -4,6 +4,11 @@ CREATE TABLE business (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   type VARCHAR(100) NOT NULL,
+  cuisine VARCHAR(255),
+  address VARCHAR(255),
+  phone VARCHAR(255),
+  description TEXT,
+  table_layout_json TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 

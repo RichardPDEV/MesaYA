@@ -16,15 +16,25 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "Resources", description = "Gestión de recursos reservables")
 public class ResourceController {
     private final ResourceService resourceService;
+    private final com.example.reservas.repo.UserRepository userRepo;
+    private final com.example.reservas.repo.BusinessRepository businessRepo;
 
-    public ResourceController(ResourceService resourceService) { this.resourceService = resourceService; }
+    public ResourceController(ResourceService resourceService, com.example.reservas.repo.UserRepository userRepo, com.example.reservas.repo.BusinessRepository businessRepo) {
+        this.resourceService = resourceService;
+        this.userRepo = userRepo;
+        this.businessRepo = businessRepo;
+    }
 
     @PostMapping("/businesses/{businessId}/resources")
     @Operation(summary = "Crear recurso en un negocio")
-    public ResourceResponse create(@PathVariable Long businessId, @Valid @RequestBody CreateResourceRequest req) {
+    @com.example.reservas.security.RequireBusinessOwner(pathVariable = "businessId")
+    public ResourceResponse create(@PathVariable Long businessId, @Valid @RequestBody CreateResourceRequest req, java.security.Principal principal) {
         if (!businessId.equals(req.businessId())) {
             throw new com.example.reservas.service.ValidationException("businessId en path y body deben coincidir");
         }
+        // ownership is validated by aspect
+        com.example.reservas.domain.Business business = businessRepo.findById(businessId)
+            .orElseThrow(() -> new com.example.reservas.service.NotFoundException("Business %d no existe".formatted(businessId)));
         Resource r = resourceService.create(req.businessId(), req.name(), req.capacity());
         return toResponse(r);
     }
