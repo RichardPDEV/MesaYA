@@ -462,8 +462,14 @@ function Badge({ status }) {
 }
 
 // ── Floor Plan (SVG interactive) ─────────────────────────────────────────────
-function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, layoutElements = [] }) {
+function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, layoutElements = [], floor = null, showLegend = true, title = null, showOnlyTables = false }) {
   const getSize = (seats) => seats <= 2 ? 48 : seats <= 4 ? 60 : 72;
+  const visibleTables = (tables || []).filter((table) => floor === null || (table.floor || 1) === floor);
+  const visibleLayoutElements = (layoutElements || []).filter((element) => {
+    if (floor === null) return true;
+    if (element.type === "floor") return (element.level || 1) === floor;
+    return (element.floor || 1) === floor;
+  });
 
   return (
     <div style={{ background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 16, overflow: "hidden", position: "relative" }}>
@@ -471,16 +477,10 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
       <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, #e2e8f0 1px, transparent 1px)", backgroundSize: "32px 32px", opacity: 0.4 }} />
       <svg width="100%" viewBox="0 0 540 360" style={{ display: "block", cursor: editable ? "default" : "pointer" }}>
         {/* Room labels */}
-        <text x="20" y="24" fontSize="11" fill="#94a3b8" fontWeight="600" letterSpacing="1">PLANO DEL RESTAURANTE</text>
+        <text x="20" y="24" fontSize="11" fill="#94a3b8" fontWeight="600" letterSpacing="1">{title || "PLANO DEL RESTAURANTE"}</text>
         <rect x="0" y="0" width="540" height="360" rx="0" fill="transparent" />
 
-        {/* Window/door indicators */}
-        <rect x="200" y="2" width="140" height="6" rx="3" fill="#93c5fd" opacity="0.6" />
-        <text x="270" y="22" fontSize="10" fill="#60a5fa" textAnchor="middle">Ventana</text>
-        <rect x="2" y="140" width="6" height="80" rx="3" fill="#86efac" opacity="0.6" />
-        <text x="22" y="184" fontSize="10" fill="#4ade80" textAnchor="middle" transform="rotate(-90,22,184)">Entrada</text>
-
-        {(layoutElements || []).map((element) => {
+        {!showOnlyTables && visibleLayoutElements.map((element) => {
           const color = element.type === "door" ? "#34d399" : element.type === "window" ? "#60a5fa" : element.type === "stairs" ? "#f59e0b" : "#cbd5e1";
           if (element.type === "floor") {
             return (
@@ -508,7 +508,7 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
           );
         })}
 
-        {tables.map((table) => {
+        {visibleTables.map((table) => {
           const size = getSize(table.seats);
           const col = TABLE_COLORS[table.status];
           const isSelected = selectedTableId === table.id;
@@ -546,15 +546,16 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
         })}
       </svg>
 
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 16, padding: "10px 16px", borderTop: "1px solid #e2e8f0", background: "white", flexWrap: "wrap" }}>
-        {Object.entries(TABLE_COLORS).map(([key, val]) => (
-          <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 12, height: 12, borderRadius: 3, background: val.bg, border: `1.5px solid ${val.border}` }} />
-            <span style={{ fontSize: 12, color: "#64748b" }}>{val.label}</span>
-          </div>
-        ))}
-      </div>
+      {showLegend && !showOnlyTables && (
+        <div style={{ display: "flex", gap: 16, padding: "10px 16px", borderTop: "1px solid #e2e8f0", background: "white", flexWrap: "wrap" }}>
+          {Object.entries(TABLE_COLORS).map(([key, val]) => (
+            <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: val.bg, border: `1.5px solid ${val.border}` }} />
+              <span style={{ fontSize: 12, color: "#64748b" }}>{val.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1022,6 +1023,7 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
   const [newTableSeats, setNewTableSeats] = useState(4);
   const [activeFloor, setActiveFloor] = useState(1);
   const [activeElementType, setActiveElementType] = useState(null);
+  const [showOnlyTables, setShowOnlyTables] = useState(false);
   const [floorCount, setFloorCount] = useState(1);
   const [floorNames, setFloorNames] = useState({ 1: "Piso principal" });
   const [selectedLayoutElementId, setSelectedLayoutElementId] = useState(null);
@@ -1324,6 +1326,64 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
     setTimeout(() => { setRegDone(false); setTab("overview"); }, 2500);
   };
 
+  const restaurantTables = activeRest?.tables || [];
+  const restaurantElements = activeRest?.layoutElements || [];
+  const getFloorLabel = (floorValue) => {
+    const floorNumber = Number(floorValue) || 1;
+    return floorNames[floorNumber] || (floorNumber === 1 ? "Piso principal" : `Piso ${floorNumber}`);
+  };
+
+  const overviewItems = [
+    ...restaurantElements.filter((element) => element.type === "door").map((element) => ({
+      key: `${element.id}-door`,
+      kind: "door",
+      icon: "🚪",
+      title: "Puerta",
+      subtitle: `${getFloorLabel(element.floor || element.level || 1)} · x ${Math.round(element.x)}, y ${Math.round(element.y)}`,
+      floorOrder: Number(element.floor || element.level || 1),
+    })),
+    ...restaurantElements.filter((element) => element.type === "window").map((element) => ({
+      key: `${element.id}-window`,
+      kind: "window",
+      icon: "🪟",
+      title: "Ventana",
+      subtitle: `${getFloorLabel(element.floor || element.level || 1)} · x ${Math.round(element.x)}, y ${Math.round(element.y)}`,
+      floorOrder: Number(element.floor || element.level || 1),
+    })),
+    ...restaurantElements.filter((element) => element.type === "stairs").map((element) => ({
+      key: `${element.id}-stairs`,
+      kind: "stairs",
+      icon: "🪜",
+      title: "Escaleras",
+      subtitle: `${getFloorLabel(element.floor || element.level || 1)} · x ${Math.round(element.x)}, y ${Math.round(element.y)}`,
+      floorOrder: Number(element.floor || element.level || 1),
+    })),
+    ...restaurantElements.filter((element) => element.type === "floor").map((element) => ({
+      key: `${element.id}-floor`,
+      kind: "floor",
+      icon: "🏢",
+      title: element.label || "Piso",
+      subtitle: `${getFloorLabel(element.level || 1)} · x ${Math.round(element.x)}, y ${Math.round(element.y)}`,
+      floorOrder: Number(element.level || 1),
+    })),
+    ...restaurantTables.map((table) => ({
+      key: `${table.id}-table`,
+      kind: "table",
+      icon: "🪑",
+      title: `Mesa ${table.label}`,
+      subtitle: `${table.seats} personas · ${getFloorLabel(table.floor || 1)} · x ${Math.round(table.x)}, y ${Math.round(table.y)}`,
+      floorOrder: Number(table.floor || 1),
+    })),
+  ].sort((a, b) => a.floorOrder - b.floorOrder || a.title.localeCompare(b.title));
+
+  const elementCounts = {
+    doors: restaurantElements.filter((element) => element.type === "door").length,
+    windows: restaurantElements.filter((element) => element.type === "window").length,
+    stairs: restaurantElements.filter((element) => element.type === "stairs").length,
+    floors: restaurantElements.filter((element) => element.type === "floor").length || Math.max(1, floorCount),
+    tables: restaurantTables.length,
+  };
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
       <div style={{ width: 240, background: "linear-gradient(180deg, #0f172a 0%, #111827 100%)", display: "flex", flexDirection: "column", flexShrink: 0, boxShadow: "8px 0 24px rgba(2, 6, 23, 0.12)" }}>
@@ -1360,11 +1420,6 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
           ))}
         </nav>
 
-        <div style={{ padding: "16px 20px", borderTop: "1px solid #1e293b" }}>
-          <button onClick={onBack} style={{ background: "transparent", border: "1px solid #334155", borderRadius: 10, padding: "8px 16px", color: "#64748b", fontSize: 13, cursor: "pointer", width: "100%" }}>
-            ← Salir del panel
-          </button>
-        </div>
       </div>
 
       {/* Main content */}
@@ -1404,8 +1459,70 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                 ))}
               </div>
 
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 16 }}>Vista rápida del plano</h3>
-              <FloorPlan tables={activeRest.tables} editable={false} />
+              <div style={{ background: APP_CARD, border: `1.5px solid ${APP_BORDER}`, borderRadius: 18, padding: "22px 22px 20px", boxShadow: CARD_SHADOW, marginBottom: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
+                  <div>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 6px" }}>Plano del restaurante</h3>
+                    <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>Cada piso se muestra como un plano estático con las mesas y sus estados.</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      onClick={() => setShowOnlyTables((value) => !value)}
+                      style={{ background: showOnlyTables ? "#0f172a" : "white", border: "1px solid #e2e8f0", borderRadius: 999, color: showOnlyTables ? "white" : "#334155", padding: "8px 12px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}
+                    >
+                      {showOnlyTables ? "Ver completo" : "Ver solo mesas"}
+                    </button>
+                    {[
+                      { label: "Puertas", value: elementCounts.doors, color: "#16a34a" },
+                      { label: "Ventanas", value: elementCounts.windows, color: "#3b82f6" },
+                      { label: "Escaleras", value: elementCounts.stairs, color: "#f59e0b" },
+                      { label: "Mesas", value: elementCounts.tables, color: "#8b5cf6" },
+                      { label: "Pisos", value: elementCounts.floors, color: "#64748b" },
+                    ].map((item) => (
+                      <div key={item.label} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 999, padding: "7px 11px", display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: "50%", background: item.color }} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{item.label}: {item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 18, alignItems: "start" }}>
+                  {Array.from({ length: floorCount }, (_, index) => index + 1).map((floorNumber) => {
+                    const floorTables = (activeRest?.tables || []).filter((table) => (table.floor || 1) === floorNumber);
+                    const floorStats = {
+                      available: floorTables.filter((table) => table.status === "available").length,
+                      occupied: floorTables.filter((table) => table.status === "occupied").length,
+                      reserved: floorTables.filter((table) => table.status === "reserved").length,
+                    };
+
+                    return (
+                      <div key={floorNumber} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: "100%", boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)" }}>
+                        <div style={{ padding: "12px 14px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <div>
+                            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{getFloorLabel(floorNumber)}</p>
+                            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{floorTables.length} mesas · {floorTables.length ? `${floorStats.available} libres` : "sin mesas"}</p>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 999, padding: "4px 8px", fontSize: 11, fontWeight: 700 }}>✓ {floorStats.available}</span>
+                            <span style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 999, padding: "4px 8px", fontSize: 11, fontWeight: 700 }}>● {floorStats.occupied}</span>
+                            <span style={{ background: "#fef9c3", color: "#a16207", borderRadius: 999, padding: "4px 8px", fontSize: 11, fontWeight: 700 }}>◐ {floorStats.reserved}</span>
+                          </div>
+                        </div>
+                        <FloorPlan
+                          tables={activeRest.tables}
+                          editable={false}
+                          layoutElements={activeRest.layoutElements || []}
+                          floor={floorNumber}
+                          showLegend={false}
+                          title={getFloorLabel(floorNumber)}
+                          showOnlyTables={showOnlyTables}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
