@@ -462,7 +462,7 @@ function Badge({ status }) {
 }
 
 // ── Floor Plan (SVG interactive) ─────────────────────────────────────────────
-function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, layoutElements = [], floor = null, showLegend = true, title = null, showOnlyTables = false }) {
+function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, layoutElements = [], floor = null, showLegend = true, title = null, showOnlyTables = false, statusFilter = null }) {
   const getSize = (seats) => seats <= 2 ? 48 : seats <= 4 ? 60 : 72;
   const visibleTables = (tables || []).filter((table) => floor === null || (table.floor || 1) === floor);
   const visibleLayoutElements = (layoutElements || []).filter((element) => {
@@ -486,8 +486,8 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
             return (
               <g key={element.id}>
                 <rect x={element.x - (element.width || 140) / 2} y={element.y - (element.height || 90) / 2} width={element.width || 140} height={element.height || 90} rx={16} fill="#f8fafc" stroke="#94a3b8" strokeDasharray="6 4" />
-                <text x={element.x} y={element.y - 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#475569">{element.label || "Piso superior"}</text>
-                <text x={element.x} y={element.y + 14} textAnchor="middle" fontSize="10" fill="#64748b">{element.level > 1 ? "Piso 2" : "Piso 1"}</text>
+                <text x={element.x} y={element.y - 3} textAnchor="middle" dominantBaseline="middle" fontSize="11" fontWeight="700" fill="#475569">{element.label || "Piso superior"}</text>
+                <text x={element.x} y={element.y + 14} textAnchor="middle" dominantBaseline="middle" fontSize="10" fill="#64748b">{element.level > 1 ? "Piso 2" : "Piso 1"}</text>
               </g>
             );
           }
@@ -496,14 +496,14 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
               <g key={element.id}>
                 <rect x={element.x - 30} y={element.y - 32} width="60" height="64" rx="12" fill="#fff7ed" stroke={color} strokeWidth="2" />
                 <path d={`M ${element.x - 20} ${element.y + 20} L ${element.x + 20} ${element.y + 20} L ${element.x + 20} ${element.y - 10} L ${element.x - 5} ${element.y - 10} L ${element.x - 5} ${element.y + 5} L ${element.x - 20} ${element.y + 5} Z`} fill={color} opacity="0.9" />
-                <text x={element.x} y={element.y + 42} textAnchor="middle" fontSize="10" fontWeight="700" fill="#92400e">Escaleras</text>
+                <text x={element.x} y={element.y + 42} textAnchor="middle" dominantBaseline="middle" fontSize="10" fontWeight="700" fill="#92400e">Escaleras</text>
               </g>
             );
           }
           return (
             <g key={element.id}>
               <rect x={element.x - (element.width || 52) / 2} y={element.y - (element.height || 22) / 2} width={element.width || 52} height={element.height || 22} rx={10} fill={element.type === "window" ? "#eff6ff" : "#f0fdf4"} stroke={color} strokeWidth="2" />
-              <text x={element.x} y={element.y + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill={color}>{element.label || (element.type === "door" ? "Puerta" : "Ventana")}</text>
+              <text x={element.x} y={element.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize="10" fontWeight="700" fill={color}>{element.label || (element.type === "door" ? "Puerta" : "Ventana")}</text>
             </g>
           );
         })}
@@ -512,11 +512,12 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
           const size = getSize(table.seats);
           const col = TABLE_COLORS[table.status];
           const isSelected = selectedTableId === table.id;
+          const dimmed = statusFilter && table.status !== statusFilter;
           const cx = table.x;
           const cy = table.y;
 
           return (
-            <g key={table.id} onClick={() => onTableClick && onTableClick(table)} style={{ cursor: "pointer" }}>
+            <g key={table.id} onClick={() => onTableClick && onTableClick(table)} style={{ cursor: "pointer", opacity: dimmed ? 0.35 : 1 }}>
               {/* Shadow */}
               <rect x={cx - size / 2 + 3} y={cy - size / 2 + 3} width={size} height={size} rx={table.seats <= 2 ? size / 2 : 10}
                 fill="#00000022" />
@@ -537,10 +538,10 @@ function FloorPlan({ tables, onTableClick, selectedTableId, editable = false, la
                 return <circle key={i} cx={cx2} cy={cy2} r={6} fill="#e2e8f0" stroke={col.border} strokeWidth={1} />;
               })}
               {/* Label */}
-              <text x={cx} y={cy - 5} textAnchor="middle" fontSize="12" fontWeight="700" fill={col.text}>{table.label}</text>
-              <text x={cx} y={cy + 10} textAnchor="middle" fontSize="10" fill={col.text}>{table.seats}p</text>
+              <text x={cx} y={cy - 2} textAnchor="middle" dominantBaseline="middle" fontSize="12" fontWeight="700" fill={col.text}>{table.label}</text>
+              <text x={cx} y={cy + 12} textAnchor="middle" dominantBaseline="middle" fontSize="10" fill={col.text}>{table.seats}p</text>
               <rect x={cx - 20} y={cy + 20} width="40" height="12" rx="6" fill="#0f172a" opacity="0.8" />
-              <text x={cx} y={cy + 28} textAnchor="middle" fontSize="9" fontWeight="700" fill="white">{table.floor > 1 ? "P2" : "P1"}</text>
+              <text x={cx} y={cy + 28} textAnchor="middle" fontSize="9" fontWeight="700" fill="white">{Number(table.floor || 1) > 1 ? `P${Number(table.floor || 1)}` : "P1"}</text>
             </g>
           );
         })}
@@ -1024,6 +1025,7 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
   const [activeFloor, setActiveFloor] = useState(1);
   const [activeElementType, setActiveElementType] = useState(null);
   const [showOnlyTables, setShowOnlyTables] = useState(false);
+  const [legendFilter, setLegendFilter] = useState(null);
   const [floorCount, setFloorCount] = useState(1);
   const [floorNames, setFloorNames] = useState({ 1: "Piso principal" });
   const [selectedLayoutElementId, setSelectedLayoutElementId] = useState(null);
@@ -1125,6 +1127,17 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
     syncRest(updated);
   };
 
+  const cycleTableStatus = (currentStatus) => {
+    const order = ["available", "occupied", "reserved"];
+    const nextIndex = (order.indexOf(currentStatus) + 1) % order.length;
+    return order[nextIndex] || "available";
+  };
+
+  const handleTableClick = (table) => {
+    const nextStatus = cycleTableStatus(table.status);
+    updateTableStatus(table.id, nextStatus);
+  };
+
   const addTable = () => {
     const currentTables = activeRest?.tables || [];
     const ids = currentTables.map(t => parseInt(t.id.replace("T", ""))).filter(Boolean).sort((a, b) => b - a);
@@ -1139,6 +1152,25 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
   const addLayoutElement = (type, x, y) => {
     if (!activeRest) return;
     const updated = { ...activeRest, layoutElements: [...(activeRest.layoutElements || []), createLayoutElement(type, x, y, activeFloor)] };
+    syncRest(updated);
+    setActiveRest(updated);
+  };
+
+  const getLayoutElementLabel = (element) => {
+    if (element?.label && element.label.trim()) return element.label.trim();
+    switch (element?.type) {
+      case "door": return "Puerta";
+      case "window": return "Ventana";
+      case "stairs": return "Escaleras";
+      case "floor": return "Piso";
+      default: return "Elemento";
+    }
+  };
+
+  const updateLayoutElementLabel = (elementId, value) => {
+    if (!activeRest) return;
+    const nextValue = value;
+    const updated = { ...activeRest, layoutElements: (activeRest.layoutElements || []).map((element) => element.id === elementId ? { ...element, label: nextValue } : element) };
     syncRest(updated);
     setActiveRest(updated);
   };
@@ -1212,8 +1244,57 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
     setActiveRest(updated);
   };
 
+  const updateLayoutElementSize = (elementId, value) => {
+    if (!activeRest) return;
+    const parsed = Number.parseInt(value, 10);
+    const nextValue = Number.isFinite(parsed) ? Math.min(64, Math.max(24, parsed)) : 24;
+    const updated = { ...activeRest, layoutElements: (activeRest.layoutElements || []).map((element) => {
+      if (element.id !== elementId) return element;
+      return { ...element, width: nextValue };
+    }) };
+    syncRest(updated);
+    setActiveRest(updated);
+  };
+
+  const handleLayoutElementSizeInputChange = (elementId, value) => {
+    if (!activeRest) return;
+    if (value === "") return;
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return;
+    const updated = { ...activeRest, layoutElements: (activeRest.layoutElements || []).map((element) => {
+      if (element.id !== elementId) return element;
+      return { ...element, width: parsed };
+    }) };
+    syncRest(updated);
+    setActiveRest(updated);
+  };
+
+  const updateTableSize = (tableId, size) => {
+    if (!activeRest) return;
+    const parsed = Number.parseInt(size, 10);
+    const nextSize = Number.isFinite(parsed) ? Math.min(64, Math.max(24, parsed)) : 24;
+    const updated = { ...activeRest, tables: activeRest.tables.map((table) => table.id === tableId ? { ...table, size: nextSize } : table) };
+    syncRest(updated);
+    setActiveRest(updated);
+  };
+
+  const handleTableSizeInputChange = (tableId, value) => {
+    if (!activeRest) return;
+    if (value === "") return;
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return;
+    const updated = { ...activeRest, tables: activeRest.tables.map((table) => table.id === tableId ? { ...table, size: parsed } : table) };
+    syncRest(updated);
+    setActiveRest(updated);
+  };
+
   const removeTable = (tableId) => {
-    syncRest({ ...activeRest, tables: activeRest.tables.filter(t => t.id !== tableId) });
+    if (!activeRest) return;
+    const confirmed = window.confirm("¿Eliminar esta mesa del plano?");
+    if (!confirmed) return;
+    const updated = { ...activeRest, tables: activeRest.tables.filter(t => t.id !== tableId) };
+    syncRest(updated);
+    setSelectedTableId(null);
   };
 
   const handleSvgDrop = useCallback((e) => {
@@ -1255,6 +1336,8 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
   }, [dragging, activeRest]);
 
   const handleFloorPlanClick = (e) => {
+    setSelectedLayoutElementId(null);
+
     if (!activeElementType || dragging) {
       if (suppressCreateRef.current) {
         suppressCreateRef.current = false;
@@ -1282,6 +1365,17 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
     return (element.floor || 1) === activeFloor;
   });
   const selectedTable = visibleTables.find((table) => table.id === selectedTableId) || null;
+  const selectedLayoutElement = (activeRest?.layoutElements || []).find((element) => element.id === selectedLayoutElementId) || null;
+  const getElementLabelLines = (element) => {
+    return [getLayoutElementLabel(element)];
+  };
+
+  const getElementBoxMetrics = (element) => {
+    const label = getLayoutElementLabel(element);
+    const width = Math.max(40, Math.min(120, 12 + label.length * 6));
+    return { width, height: 24 };
+  };
+
   const stats = {
     total: activeRest.tables.length,
     available: activeRest.tables.filter(t => t.status === "available").length,
@@ -1472,6 +1566,31 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                     >
                       {showOnlyTables ? "Ver completo" : "Ver solo mesas"}
                     </button>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      {[
+                        { key: null, label: "Todo", color: "#94a3b8" },
+                        { key: "available", label: "Disponibles", color: "#16a34a" },
+                        { key: "occupied", label: "Ocupadas", color: "#dc2626" },
+                        { key: "reserved", label: "Reservadas", color: "#ca8a04" },
+                      ].map((item) => (
+                        <button
+                          key={String(item.key)}
+                          onClick={() => setLegendFilter(item.key)}
+                          style={{
+                            background: legendFilter === item.key ? item.color : "white",
+                            color: legendFilter === item.key ? "white" : "#334155",
+                            border: legendFilter === item.key ? "1px solid transparent" : "1px solid #e2e8f0",
+                            borderRadius: 999,
+                            padding: "8px 12px",
+                            cursor: "pointer",
+                            fontSize: 13,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
                     {[
                       { label: "Puertas", value: elementCounts.doors, color: "#16a34a" },
                       { label: "Ventanas", value: elementCounts.windows, color: "#3b82f6" },
@@ -1511,16 +1630,46 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                         </div>
                         <FloorPlan
                           tables={activeRest.tables}
+                          onTableClick={handleTableClick}
                           editable={false}
                           layoutElements={activeRest.layoutElements || []}
                           floor={floorNumber}
                           showLegend={false}
                           title={getFloorLabel(floorNumber)}
                           showOnlyTables={showOnlyTables}
+                          statusFilter={legendFilter}
                         />
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 20 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>Control de mesas</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                  {activeRest.tables.map(table => (
+                    <div key={table.id} style={{ background: "white", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span style={{ fontWeight: 700, color: "#0f172a" }}>{table.label}</span>
+                        <Badge status={table.status} />
+                      </div>
+                      <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 13 }}>{table.seats} personas</p>
+                      <div style={{ marginBottom: 8 }}>
+                        <button
+                          onClick={() => { setActiveFloor(table.floor || 1); setSelectedTableId(table.id); }}
+                          style={{ width: "100%", background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 8, padding: "8px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          {`Piso: ${floorNames[table.floor || 1] || (table.floor === 1 ? "Piso principal" : `Piso ${table.floor || 1}`)}`}
+                        </button>
+                      </div>
+                      <select value={table.status} onChange={e => updateTableStatus(table.id, e.target.value)}
+                        style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "7px 10px", fontSize: 13, background: "#f8fafc" }}>
+                        <option value="available">Disponible</option>
+                        <option value="occupied">Ocupada</option>
+                        <option value="reserved">Reservada</option>
+                      </select>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1634,7 +1783,7 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                     </pattern>
                   </defs>
                   <rect width="540" height="360" fill="url(#grid)" />
-                  <text x="270" y="20" textAnchor="middle" fontSize="11" fill="#94a3b8" fontWeight="600">PLANO EDITABLE — arrastra las mesas</text>
+                  <text x="270" y="20" textAnchor="middle" fontSize="11" fill="#94a3b8" fontWeight="600">PLANO EDITABLE — arrastra mesas y elementos</text>
 
                   {visibleLayoutElements.length === 0 && visibleTables.length === 0 && (
                     <text x="270" y="190" textAnchor="middle" fontSize="13" fill="#94a3b8">Plano vacío para {floorNames[activeFloor] || `Piso ${activeFloor}`}</text>
@@ -1646,10 +1795,10 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                     const isSelected = selectedLayoutElementId === element.id;
                     if (element.type === "floor") {
                       return (
-                        <g key={element.id} transform={`rotate(${rotation} ${element.x} ${element.y})`} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setSelectedLayoutElementId(element.id); setDragging({ kind: "element", id: element.id }); }}>
+                        <g key={element.id} transform={`rotate(${rotation} ${element.x} ${element.y})`} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setSelectedLayoutElementId(element.id); setDragging({ kind: "element", id: element.id }); }} onClick={(e) => { e.stopPropagation(); setSelectedLayoutElementId(element.id); }}>
                           <rect x={element.x - (element.width || 140) / 2} y={element.y - (element.height || 90) / 2} width={element.width || 140} height={element.height || 90} rx={16} fill="#f8fafc" stroke="#94a3b8" strokeDasharray="6 4" />
-                          <text x={element.x} y={element.y - 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#475569">{element.label || "Piso superior"}</text>
-                          <text x={element.x} y={element.y + 14} textAnchor="middle" fontSize="10" fill="#64748b">{element.level > 1 ? "Piso 2" : "Piso 1"}</text>
+                          <text x={element.x} y={element.y - 3} textAnchor="middle" dominantBaseline="middle" fontSize="11" fontWeight="700" fill="#475569">{element.label || "Piso superior"}</text>
+                          <text x={element.x} y={element.y + 14} textAnchor="middle" dominantBaseline="middle" fontSize="10" fill="#64748b">{element.level > 1 ? "Piso 2" : "Piso 1"}</text>
                           {isSelected && (
                             <g onMouseDown={stopLayoutAction} onClick={stopLayoutAction}>
                               <rect x={element.x + 70} y={element.y - 42} width="72" height="24" rx="8" fill="#0f172a" />
@@ -1662,31 +1811,43 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                       );
                     }
                     if (element.type === "stairs") {
+                      const stairWidth = Math.max(24, Math.min(64, element.width || 64));
+                      const stairHeight = Math.max(36, stairWidth * 1.05);
+                      const rectX = element.x - stairWidth / 2;
+                      const rectY = element.y - stairHeight / 2;
+                      const innerX = stairWidth * 0.18;
+                      const innerY = stairHeight * 0.16;
+                      const topY = element.y - stairHeight / 2 + stairHeight * 0.28;
+                      const bottomY = element.y + stairHeight / 2 - stairHeight * 0.18;
                       return (
-                        <g key={element.id} transform={`rotate(${rotation} ${element.x} ${element.y})`} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setSelectedLayoutElementId(element.id); setDragging({ kind: "element", id: element.id }); }}>
-                          <rect x={element.x - 30} y={element.y - 32} width="60" height="64" rx="12" fill="#fff7ed" stroke={color} strokeWidth="2" />
-                          <path d={`M ${element.x - 20} ${element.y + 20} L ${element.x + 20} ${element.y + 20} L ${element.x + 20} ${element.y - 10} L ${element.x - 5} ${element.y - 10} L ${element.x - 5} ${element.y + 5} L ${element.x - 20} ${element.y + 5} Z`} fill={color} opacity="0.9" />
+                        <g key={element.id} transform={`rotate(${rotation} ${element.x} ${element.y})`} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setSelectedLayoutElementId(element.id); setDragging({ kind: "element", id: element.id }); }} onClick={(e) => { e.stopPropagation(); setSelectedLayoutElementId(element.id); }}>
+                          <rect x={rectX} y={rectY} width={stairWidth} height={stairHeight} rx={12} fill="#fff7ed" stroke={color} strokeWidth="2" />
+                          <path d={`M ${element.x - stairWidth / 2 + innerX} ${bottomY} L ${element.x + stairWidth / 2 - innerX} ${bottomY} L ${element.x + stairWidth / 2 - innerX} ${topY} L ${element.x - stairWidth / 2 + stairWidth * 0.4} ${topY} L ${element.x - stairWidth / 2 + stairWidth * 0.4} ${element.y - innerY} L ${element.x - stairWidth / 2 + innerX} ${element.y - innerY} Z`} fill={color} opacity="0.9" />
                           {isSelected && (
                             <g onMouseDown={stopLayoutAction} onClick={stopLayoutAction}>
-                              <rect x={element.x + 36} y={element.y - 46} width="72" height="24" rx="8" fill="#0f172a" />
-                              <text x={element.x + 72} y={element.y - 30} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); rotateLayoutElement(element.id); }}>Rotar</text>
-                              <rect x={element.x + 36} y={element.y - 18} width="72" height="24" rx="8" fill="#dc2626" />
-                              <text x={element.x + 72} y={element.y - 2} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); removeLayoutElement(element.id); }}>Eliminar</text>
+                              <rect x={element.x + stairWidth / 2 + 6} y={element.y - stairHeight / 2 - 14} width="72" height="24" rx="8" fill="#0f172a" />
+                              <text x={element.x + stairWidth / 2 + 42} y={element.y - stairHeight / 2 + 2} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); rotateLayoutElement(element.id); }}>Rotar</text>
+                              <rect x={element.x + stairWidth / 2 + 6} y={element.y - stairHeight / 2 + 14} width="72" height="24" rx="8" fill="#dc2626" />
+                              <text x={element.x + stairWidth / 2 + 42} y={element.y - stairHeight / 2 + 30} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); removeLayoutElement(element.id); }}>Eliminar</text>
                             </g>
                           )}
                         </g>
                       );
                     }
+                    const box = getElementBoxMetrics(element);
+                    const labelLines = getElementLabelLines(element);
                     return (
-                      <g key={element.id} transform={`rotate(${rotation} ${element.x} ${element.y})`} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setSelectedLayoutElementId(element.id); setDragging({ kind: "element", id: element.id }); }}>
-                        <rect x={element.x - (element.width || 52) / 2} y={element.y - (element.height || 22) / 2} width={element.width || 52} height={element.height || 22} rx={10} fill={element.type === "window" ? "#eff6ff" : "#f0fdf4"} stroke={color} strokeWidth="2" />
-                        <text x={element.x} y={element.y + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill={color}>{element.label || (element.type === "door" ? "Puerta" : "Ventana")}</text>
+                      <g key={element.id} transform={`rotate(${rotation} ${element.x} ${element.y})`} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setSelectedLayoutElementId(element.id); setDragging({ kind: "element", id: element.id }); }} onClick={(e) => { e.stopPropagation(); setSelectedLayoutElementId(element.id); }}>
+                        <rect x={element.x - box.width / 2} y={element.y - box.height / 2} width={box.width} height={box.height} rx={10} fill={element.type === "window" ? "#eff6ff" : "#f0fdf4"} stroke={color} strokeWidth="2" />
+                        <text x={element.x} y={element.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize="10" fontWeight="700" fill={color}>
+                          {labelLines[0]}
+                        </text>
                         {isSelected && (
                           <g onMouseDown={stopLayoutAction} onClick={stopLayoutAction}>
-                            <rect x={element.x + 32} y={element.y - 34} width="72" height="24" rx="8" fill="#0f172a" />
-                            <text x={element.x + 68} y={element.y - 18} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); rotateLayoutElement(element.id); }}>Rotar</text>
-                            <rect x={element.x + 32} y={element.y - 6} width="72" height="24" rx="8" fill="#dc2626" />
-                            <text x={element.x + 68} y={element.y + 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); removeLayoutElement(element.id); }}>Eliminar</text>
+                            <rect x={element.x + box.width / 2 + 2} y={element.y - 34} width="72" height="24" rx={8} fill="#0f172a" />
+                            <text x={element.x + box.width / 2 + 38} y={element.y - 18} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); rotateLayoutElement(element.id); }}>Rotar</text>
+                            <rect x={element.x + box.width / 2 + 2} y={element.y - 6} width="72" height="24" rx={8} fill="#dc2626" />
+                            <text x={element.x + box.width / 2 + 38} y={element.y + 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" onClick={(e) => { stopLayoutAction(e); removeLayoutElement(element.id); }}>Eliminar</text>
                           </g>
                         )}
                       </g>
@@ -1694,10 +1855,10 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                   })}
 
                   {visibleTables.map((table) => {
-                    const size = table.seats <= 2 ? 48 : table.seats <= 4 ? 60 : 72;
+                    const size = table.size || (table.seats <= 2 ? 48 : table.seats <= 4 ? 60 : 72);
                     const col = TABLE_COLORS[table.status];
                     return (
-                      <g key={table.id} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setDragging({ kind: "table", id: table.id }); setSelectedTableId(table.id); }} onClick={() => setSelectedTableId(table.id)} style={{ cursor: "grab" }}>
+                      <g key={table.id} onMouseDown={(e) => { e.stopPropagation(); suppressCreateRef.current = true; dragIntentRef.current = true; setDragging({ kind: "table", id: table.id }); setSelectedTableId(table.id); setSelectedLayoutElementId(null); }} onClick={() => { setSelectedTableId(table.id); setSelectedLayoutElementId(null); }} style={{ cursor: "grab" }}>
                         <rect x={table.x - size / 2 + 3} y={table.y - size / 2 + 3} width={size} height={size} rx={10} fill="#00000015" />
                         <rect x={table.x - size / 2} y={table.y - size / 2} width={size} height={size} rx={table.seats <= 2 ? size / 2 : 10}
                           fill={col.bg} stroke={col.border} strokeWidth="2" />
@@ -1706,8 +1867,8 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                           const r = size / 2 + 12;
                           return <circle key={i} cx={table.x + r * Math.cos(angle)} cy={table.y + r * Math.sin(angle)} r={6} fill="#e2e8f0" stroke={col.border} strokeWidth="1" />;
                         })}
-                        <text x={table.x} y={table.y - 4} textAnchor="middle" fontSize="12" fontWeight="700" fill={col.text}>{table.label}</text>
-                        <text x={table.x} y={table.y + 10} textAnchor="middle" fontSize="10" fill={col.text}>{table.seats}p</text>
+                        <text x={table.x} y={table.y - 2} textAnchor="middle" dominantBaseline="middle" fontSize="12" fontWeight="700" fill={col.text}>{table.label}</text>
+                        <text x={table.x} y={table.y + 12} textAnchor="middle" dominantBaseline="middle" fontSize="10" fill={col.text}>{table.seats}p</text>
                         <rect x={table.x - 24} y={table.y + 20} width="48" height="12" rx="6" fill="#0f172a" opacity="0.8" />
                         <text x={table.x} y={table.y + 28} textAnchor="middle" fontSize="9" fontWeight="700" fill="white">{table.floor > 1 ? `P${table.floor}` : "P1"}</text>
                       </g>
@@ -1722,7 +1883,7 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                     <p style={{ margin: 0, fontWeight: 700, color: "#0f172a" }}>Mesa {selectedTable.label} seleccionada</p>
                     <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>Asigna el piso para que el cliente vea mejor la ubicación.</p>
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     {floorCount > 1 ? Array.from({ length: floorCount }, (_, index) => index + 1).map(floor => (
                       <button key={floor} onClick={() => updateTableFloor(selectedTable.id, floor)} style={{ padding: "8px 12px", borderRadius: 10, border: selectedTable.floor === floor ? "2px solid #0f172a" : "1px solid #e2e8f0", background: selectedTable.floor === floor ? "#0f172a" : "white", color: selectedTable.floor === floor ? "white" : "#374151", fontWeight: 600, cursor: "pointer" }}>
                         {floorNames[floor] || (floor === 1 ? "Piso principal" : `Piso ${floor}`)}
@@ -1730,43 +1891,61 @@ function RestaurantDashboard({ restaurants, onBack, onLogout, onSaveRestaurant, 
                     )) : (
                       <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>Se usará el piso principal por defecto</span>
                     )}
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#334155" }}>
+                      Tamaño
+                      <input
+                        type="number"
+                        min="24"
+                        max="64"
+                        step="1"
+                        value={selectedTable.size || 60}
+                        onBlur={(e) => updateTableSize(selectedTable.id, e.target.value)}
+                        onChange={(e) => handleTableSizeInputChange(selectedTable.id, e.target.value)}
+                        style={{ width: 70, border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff" }}
+                      />
+                    </label>
+                    <button
+                      onClick={() => removeTable(selectedTable.id)}
+                      style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Borrar mesa
+                    </button>
                   </div>
                 </div>
               )}
 
-
-              {/* Table controls */}
-              <div style={{ marginTop: 20 }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>Control de mesas</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                  {activeRest.tables.map(table => (
-                    <div key={table.id} style={{ background: "white", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "14px 16px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                        <span style={{ fontWeight: 700, color: "#0f172a" }}>{table.label}</span>
-                        <Badge status={table.status} />
-                      </div>
-                      <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 13 }}>{table.seats} personas</p>
-                      <div style={{ marginBottom: 8 }}>
-                        <button
-                          onClick={() => { setActiveFloor(table.floor || 1); setSelectedTableId(table.id); }}
-                          style={{ width: "100%", background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 8, padding: "8px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                          {`Piso: ${floorNames[table.floor || 1] || (table.floor === 1 ? "Piso principal" : `Piso ${table.floor || 1}`)}`}
-                        </button>
-                      </div>
-                      <select value={table.status} onChange={e => updateTableStatus(table.id, e.target.value)}
-                        style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "7px 10px", fontSize: 13, background: "#f8fafc", marginBottom: 8 }}>
-                        <option value="available">Disponible</option>
-                        <option value="occupied">Ocupada</option>
-                        <option value="reserved">Reservada</option>
-                      </select>
-                      <button onClick={() => removeTable(table.id)}
-                        style={{ width: "100%", background: "transparent", border: "1.5px solid #fee2e2", color: "#dc2626", borderRadius: 8, padding: "6px", fontSize: 12, cursor: "pointer" }}>
-                        Eliminar mesa
-                      </button>
-                    </div>
-                  ))}
+              {selectedLayoutElement && (
+                <div style={{ marginTop: 18, background: "#fff7ed", border: "1.5px solid #fdba74", borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10, minWidth: 0, maxWidth: 380 }}>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 700, color: "#9a2c00" }}>{getLayoutElementLabel(selectedLayoutElement)}</p>
+                    <p style={{ margin: "4px 0 0", color: "#c2410c", fontSize: 13 }}>Arrastra el elemento para moverlo. Cambia su nombre y tamaño para adaptarlo mejor al plano.</p>
+                  </div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#7c2d12" }}>Nombre del elemento</label>
+                  <input
+                    value={selectedLayoutElement.label || ""}
+                    onChange={(e) => updateLayoutElementLabel(selectedLayoutElement.id, e.target.value)}
+                    placeholder={getLayoutElementLabel(selectedLayoutElement)}
+                    style={{ ...inputStyle, marginBottom: 0, minHeight: 44, width: "100%", maxWidth: 340, whiteSpace: "normal" }}
+                  />
+                  {selectedLayoutElement.type === "stairs" && (
+                    <label style={{ fontSize: 13, fontWeight: 600, color: "#7c2d12" }}>
+                      Tamaño de escalera
+                      <input
+                        type="number"
+                        min="24"
+                        max="64"
+                        step="1"
+                        value={selectedLayoutElement.width || 64}
+                        onBlur={(e) => updateLayoutElementSize(selectedLayoutElement.id, e.target.value)}
+                        onChange={(e) => handleLayoutElementSizeInputChange(selectedLayoutElement.id, e.target.value)}
+                        style={{ ...inputStyle, marginTop: 4, marginBottom: 0, width: "100%" }}
+                      />
+                    </label>
+                  )}
                 </div>
-              </div>
+              )}
+
+
             </div>
           )}
 
