@@ -39,5 +39,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
       """)
     Page<Reservation> findForDayPage(Long resourceId, OffsetDateTime start, OffsetDateTime end, Pageable pageable);
 
+    List<Reservation> findByUserId(Long userId);
+
     long countByResourceIdAndStatus(Long resourceId, ReservationStatus status);
 }

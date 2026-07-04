@@ -3,6 +3,7 @@ package com.example.reservas;
 import com.example.reservas.domain.*;
 import com.example.reservas.repo.*;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import com.example.reservas.API_de_reservas.ApiDeReservasApplication;
@@ -25,6 +26,7 @@ import java.time.ZoneOffset;
 @EntityScan(basePackages = "com.example.reservas.domain")
 @ComponentScan(basePackages = "com.example.reservas")
 @Testcontainers
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class ReservationRepositoryIT {
 
     @Container

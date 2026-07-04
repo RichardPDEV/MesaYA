@@ -17,10 +17,11 @@ services:
     environment:
       - DB_URL=jdbc:postgresql://postgres:5432/reservas
       - DB_USERNAME=reservas
-      - DB_PASSWORD=changeme
+      - DB_PASSWORD=reservas
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - APP_JWT_SECRET
+      - APP_JWT_SECRET=dev-secret-key-1234567890-abcdef
+      - APP_COOKIE_SECURE=false
       - SPRING_PROFILES_ACTIVE=prod
     depends_on: [postgres, redis]
     ports: ["8080:8080"]

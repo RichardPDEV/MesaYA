@@ -12,4 +12,7 @@ jobs:
           java-version: '21'
           cache: maven
       - name: Build & Test
-        run: mvn -q -B verify
+        run: mvn clean verify
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          APP_JWT_SECRET: "ci-test-secret-please-change-000000000000"

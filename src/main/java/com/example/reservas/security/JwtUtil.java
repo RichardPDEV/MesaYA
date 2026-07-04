@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
+import java.util.Map;
 
 @Component
 public class JwtUtil {
@@ -28,21 +29,28 @@ public class JwtUtil {
     }
 
     public String generateAccessToken(String username) {
-        return generateToken(username, accessValidityMs);
+        return generateToken(username, accessValidityMs, null);
+    }
+
+    public String generateAccessToken(String username, String role) {
+        return generateToken(username, accessValidityMs, role);
     }
 
     public String generateRefreshToken(String username) {
-        return generateToken(username, refreshValidityMs);
+        return generateToken(username, refreshValidityMs, null);
     }
 
-    private String generateToken(String username, long validityMs) {
+    private String generateToken(String username, long validityMs, String role) {
         Date now = new Date();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(now)
                 .setExpiration(new Date(now.getTime() + validityMs))
-                .signWith(key)
-                .compact();
+                .signWith(key);
+        if (role != null && !role.isBlank()) {
+            builder.claim("role", role);
+        }
+        return builder.compact();
     }
 
     public String extractUsername(String token) {
@@ -56,5 +64,9 @@ public class JwtUtil {
         } catch (JwtException | IllegalArgumentException ex) {
             return false;
         }
+    }
+
+    public String extractRole(String token) {
+        return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody().get("role", String.class);
     }
 }

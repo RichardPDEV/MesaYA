@@ -8,6 +8,7 @@ public record CreateReservationRequest(
     @NotBlank String customerName,
     @Email @NotBlank String customerEmail,
     @NotNull @Positive Integer partySize,
+    @NotBlank String tableId,
     @NotNull OffsetDateTime startTime,
     @NotNull OffsetDateTime endTime
 ) {}

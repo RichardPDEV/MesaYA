@@ -1,5 +1,6 @@
 package com.example.reservas.web;
 
+import com.example.reservas.domain.User;
 import com.example.reservas.security.JwtUtil;
 import com.example.reservas.service.UserService;
 import com.example.reservas.web.dto.AuthRequests;
@@ -8,6 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -26,16 +29,34 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody AuthRequests.Register req) {
-        var u = userService.register(req.username(), req.password(), req.displayName());
-        return ResponseEntity.ok().body(java.util.Map.of("id", u.getId(), "username", u.getUsername()));
+        String username = req.username() == null ? "" : req.username().trim();
+        String password = req.password() == null ? "" : req.password();
+        String displayName = req.displayName() == null ? "" : req.displayName().trim();
+        if (username.isBlank() || password.isBlank() || displayName.isBlank()) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "campos_requeridos"));
+        }
+
+        var u = userService.register(username, password, displayName);
+        return ResponseEntity.ok().body(java.util.Map.of(
+                "id", u.getId(),
+                "username", u.getUsername(),
+                "displayName", u.getDisplayName(),
+                "role", u.getRole().name()
+        ));
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody AuthRequests.Login req) {
-        var userOpt = userService.authenticate(req.username(), req.password());
+        String username = req.username() == null ? "" : req.username().trim();
+        String password = req.password() == null ? "" : req.password();
+        if (username.isBlank() || password.isBlank()) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "campos_requeridos"));
+        }
+
+        var userOpt = userService.authenticate(username, password);
         if (userOpt.isEmpty()) return ResponseEntity.status(401).body(java.util.Map.of("error", "invalid_credentials"));
         var user = userOpt.get();
-        var access = jwtUtil.generateAccessToken(user.getUsername());
+        var access = jwtUtil.generateAccessToken(user.getUsername(), user.getRole().name());
         var refresh = jwtUtil.generateRefreshToken(user.getUsername());
         userService.saveRefreshToken(user.getId(), refresh);
         Cookie cookie = new Cookie("refreshToken", refresh);
@@ -43,7 +64,13 @@ public class AuthController {
         cookie.setPath("/");
         cookie.setMaxAge(60 * 60 * 24 * 7);
         cookie.setSecure(cookieSecure);
-        var resp = ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookieToHeader(cookie)).body(java.util.Map.of("token", access));
+        var resp = ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookieToHeader(cookie)).body(java.util.Map.of(
+                "token", access,
+                "id", user.getId(),
+                "username", user.getUsername(),
+                "displayName", user.getDisplayName(),
+                "role", user.getRole().name()
+        ));
         return resp;
     }
 
@@ -60,7 +87,7 @@ public class AuthController {
         if (userOpt.isEmpty()) return ResponseEntity.status(401).body(java.util.Map.of("error","invalid_refresh"));
         var user = userOpt.get();
         if (user.getRefreshToken() == null || !user.getRefreshToken().equals(refresh)) return ResponseEntity.status(401).body(java.util.Map.of("error","invalid_refresh"));
-        var newAccess = jwtUtil.generateAccessToken(username);
+        var newAccess = jwtUtil.generateAccessToken(username, user.getRole().name());
         var newRefresh = jwtUtil.generateRefreshToken(username);
         userService.saveRefreshToken(user.getId(), newRefresh);
         Cookie cookie = new Cookie("refreshToken", newRefresh);
@@ -69,6 +96,27 @@ public class AuthController {
         cookie.setMaxAge(60 * 60 * 24 * 7);
         cookie.setSecure(cookieSecure);
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookieToHeader(cookie)).body(java.util.Map.of("token", newAccess));
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> me() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null) {
+            return ResponseEntity.status(401).body(java.util.Map.of("error", "unauthorized"));
+        }
+
+        var userOpt = userService.findByUsername(authentication.getName());
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.status(401).body(java.util.Map.of("error", "unauthorized"));
+        }
+
+        User user = userOpt.get();
+        return ResponseEntity.ok(java.util.Map.of(
+                "id", user.getId(),
+                "username", user.getUsername(),
+                "displayName", user.getDisplayName(),
+                "role", user.getRole().name()
+        ));
     }
 
     private String cookieToHeader(Cookie cookie) {

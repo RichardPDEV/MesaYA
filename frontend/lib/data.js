@@ -1,0 +1,46 @@
+export const INITIAL_RESTAURANTS = [
+  {
+    id: 1,
+    name: "La Terrazza",
+    cuisine: "Italiana",
+    address: "Calle Gran Vía 42, Madrid",
+    phone: "+34 91 234 5678",
+    description: "Auténtica cocina italiana con vistas a la ciudad. Ambiente íntimo y elegante.",
+    image: "🍝",
+    tables: [
+      { id: "T1", x: 80, y: 80, seats: 2, status: "available", label: "T1" },
+      { id: "T2", x: 220, y: 80, seats: 4, status: "occupied", label: "T2" },
+      { id: "T3", x: 360, y: 80, seats: 2, status: "reserved", label: "T3" },
+      { id: "T4", x: 80, y: 220, seats: 6, status: "available", label: "T4" },
+      { id: "T5", x: 260, y: 200, seats: 4, status: "available", label: "T5" },
+      { id: "T6", x: 400, y: 220, seats: 2, status: "available", label: "T6" },
+    ],
+    openTime: "13:00",
+    closeTime: "23:00",
+    reservations: [
+      { id: "R1", tableId: "T2", date: "2026-06-26", time: "20:00", name: "García Familia", guests: 4, status: "confirmed" },
+      { id: "R2", tableId: "T3", date: "2026-06-26", time: "21:00", name: "Martínez", guests: 2, status: "confirmed" },
+    ],
+  },
+  {
+    id: 2,
+    name: "El Rincón del Mar",
+    cuisine: "Mariscos",
+    address: "Paseo Marítimo 15, Barcelona",
+    phone: "+34 93 456 7890",
+    description: "Los mejores mariscos frescos del Mediterráneo. Terraza con vista al mar.",
+    image: "🦞",
+    tables: [
+      { id: "T1", x: 80, y: 80, seats: 4, status: "available", label: "T1" },
+      { id: "T2", x: 240, y: 80, seats: 6, status: "available", label: "T2" },
+      { id: "T3", x: 400, y: 80, seats: 2, status: "reserved", label: "T3" },
+      { id: "T4", x: 160, y: 220, seats: 4, status: "available", label: "T4" },
+      { id: "T5", x: 320, y: 220, seats: 4, status: "available", label: "T5" },
+    ],
+    openTime: "12:00",
+    closeTime: "00:00",
+    reservations: [
+      { id: "R1", tableId: "T3", date: "2026-06-26", time: "19:00", name: "López", guests: 2, status: "confirmed" },
+    ],
+  },
+];;
