@@ -15,3 +15,4 @@ jobs:
         run: mvn clean verify
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
+          APP_JWT_SECRET: "ci-test-secret-please-change-000000000000"

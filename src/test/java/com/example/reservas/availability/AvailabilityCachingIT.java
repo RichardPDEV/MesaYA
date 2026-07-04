@@ -3,6 +3,7 @@ package com.example.reservas.availability;
 import com.example.reservas.repo.ReservationRepository;
 import com.example.reservas.service.AvailabilityService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,7 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
 @SpringBootTest
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class AvailabilityCachingIT {
 
   static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);

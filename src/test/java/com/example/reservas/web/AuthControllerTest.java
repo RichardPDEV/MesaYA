@@ -1,21 +1,19 @@
 package com.example.reservas.web;
 
-import com.example.reservas.API_de_reservas.ApiDeReservasApplication;
 import com.example.reservas.domain.User;
 import com.example.reservas.domain.UserRole;
 import com.example.reservas.security.JwtUtil;
 import com.example.reservas.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.context.ContextConfiguration;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,23 +23,21 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(AuthController.class)
-@AutoConfigureMockMvc(addFilters = false)
-@ContextConfiguration(classes = ApiDeReservasApplication.class)
+@ExtendWith(MockitoExtension.class)
 class AuthControllerTest {
 
-    @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @Mock
     private UserService userService;
 
-    @MockBean
+    @Mock
     private JwtUtil jwtUtil;
 
     @BeforeEach
-    void clearSecurityContext() {
+    void setUp() {
         SecurityContextHolder.clearContext();
+        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(userService, jwtUtil)).build();
     }
 
     @Test
@@ -62,7 +58,7 @@ class AuthControllerTest {
                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities())
         );
 
-        mockMvc.perform(get("/auth/me").header("Authorization", "Bearer test-token"))
+        mockMvc.perform(get("/auth/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("ana@example.com"))
                 .andExpect(jsonPath("$.displayName").value("Ana Pérez"))
