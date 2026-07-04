@@ -15,11 +15,17 @@ public class UserService {
     public UserService(UserRepository userRepo) { this.userRepo = userRepo; }
 
     public User register(String username, String password, String displayName) {
-        if (userRepo.findByUsername(username).isPresent()) throw new ValidationException("username ya existe");
+        String normalizedUsername = username == null ? "" : username.trim().toLowerCase();
+        String normalizedDisplayName = displayName == null ? "" : displayName.trim();
+        if (normalizedUsername.isBlank() || password == null || password.isBlank() || normalizedDisplayName.isBlank()) {
+            throw new ValidationException("campos_requeridos");
+        }
+        if (userRepo.findByUsername(normalizedUsername).isPresent()) throw new ValidationException("username ya existe");
         User u = new User();
-        u.setUsername(username);
+        u.setUsername(normalizedUsername);
         u.setPasswordHash(passwordEncoder.encode(password));
-        u.setDisplayName(displayName);
+        u.setDisplayName(normalizedDisplayName);
+        u.setRole(com.example.reservas.domain.UserRole.USER);
         return userRepo.save(u);
     }
 

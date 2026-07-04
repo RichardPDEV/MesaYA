@@ -12,6 +12,12 @@ public class Reservation {
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name="resource_id", nullable=false)
     private Resource resource;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(name="table_id") private String tableId;
+
     @Column(name="customer_name", nullable=false)  private String customerName;
     @Column(name="customer_email", nullable=false) private String customerEmail;
     @Column(name="party_size", nullable=false)     private Integer partySize;
@@ -59,6 +65,20 @@ public class Reservation {
 
     public void setCustomerEmail(String customerEmail) {
         this.customerEmail = customerEmail;
+    }
+    public String getTableId() {
+        return tableId;
+    }
+
+    public void setTableId(String tableId) {
+        this.tableId = tableId;
+    }
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
     }
 
     public Integer getPartySize() {

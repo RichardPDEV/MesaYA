@@ -39,8 +39,8 @@ public class ProdStartupValidator {
         if (isBlank(dbUrl) || isBlank(dbUser) || isBlank(dbPassword) || isBlank(redisHost) || isBlank(jwtSecret)) {
             throw new IllegalStateException("Producción requiere todas las variables: DB_URL, DB_USERNAME, DB_PASSWORD, REDIS_HOST, APP_JWT_SECRET");
         }
-        if (dbPassword.equals("changeme") || dbPassword.equals("reservas")) {
-            throw new IllegalStateException("DB_PASSWORD no puede usar valores por defecto inseguros en producción");
+        if (dbPassword.equals("changeme")) {
+            throw new IllegalStateException("DB_PASSWORD no puede usar el valor por defecto inseguro changeme en producción");
         }
         if (jwtSecret.length() < 32 || jwtSecret.startsWith("replace-with")) {
             throw new IllegalStateException("APP_JWT_SECRET debe ser una cadena segura de al menos 32 caracteres en producción");

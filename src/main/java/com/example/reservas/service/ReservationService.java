@@ -6,6 +6,7 @@ import com.example.reservas.dto.ReservationResponse;
 import com.example.reservas.repo.CancellationPolicyRepository;
 import com.example.reservas.repo.ReservationRepository;
 import com.example.reservas.repo.ResourceRepository;
+import com.example.reservas.service.UserService;
 import com.example.reservas.service.cache.CacheKeys;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
@@ -25,21 +26,28 @@ public class ReservationService {
     private final ResourceRepository resourceRepo;
     private final CancellationPolicyRepository cancellationPolicyRepo;
     private final CacheManager cacheManager;
+    private final UserService userService;
 
     public ReservationService(ReservationRepository reservationRepo,
                               ResourceRepository resourceRepo,
                               CancellationPolicyRepository cancellationPolicyRepo,
-                              CacheManager cacheManager) {
+                              CacheManager cacheManager,
+                              UserService userService) {
         this.reservationRepo = reservationRepo;
         this.resourceRepo = resourceRepo;
         this.cancellationPolicyRepo = cancellationPolicyRepo;
         this.cacheManager = cacheManager;
+        this.userService = userService;
     }
 
     /**
      * Create: valida, persiste y limpia caché de availability para los días impactados (UTC).
      * Claves de caché unificadas vía CacheKeys.availKey(resourceId, LocalDate).
      */
+    public ReservationResponse create(CreateReservationRequest req) {
+        return create(req, null);
+    }
+
     @Caching(evict = {
         @CacheEvict(cacheNames = "availability",
                     key = "T(com.example.reservas.service.cache.CacheKeys).availKey(#req.resourceId(), #root.target.dayDate(#req.startTime()))"),
@@ -48,13 +56,19 @@ public class ReservationService {
                     condition = "#root.target.dayDate(#req.startTime()) != #root.target.dayDate(#req.endTime())")
     })
     @Transactional
-    public ReservationResponse create(CreateReservationRequest req) {
+    public ReservationResponse create(CreateReservationRequest req, String currentUsername) {
         if (req.startTime().isAfter(req.endTime()) || req.startTime().isEqual(req.endTime())) {
             throw new ValidationException("startTime debe ser < endTime");
         }
 
         Resource resource = resourceRepo.findById(req.resourceId())
                 .orElseThrow(() -> new NotFoundException("Resource %d no existe".formatted(req.resourceId())));
+
+        User user = null;
+        if (currentUsername != null && !currentUsername.isBlank()) {
+            user = userService.findByUsername(currentUsername)
+                    .orElseThrow(() -> new NotFoundException("Usuario %s no existe".formatted(currentUsername)));
+        }
 
         if (req.partySize() > resource.getCapacity()) {
             throw new ValidationException("partySize excede la capacidad del recurso");
@@ -67,9 +81,16 @@ public class ReservationService {
 
         Reservation r = new Reservation();
         r.setResource(resource);
-        r.setCustomerName(req.customerName());
-        r.setCustomerEmail(req.customerEmail());
+        r.setUser(user);
+        if (user != null) {
+            r.setCustomerName(user.getDisplayName());
+            r.setCustomerEmail(user.getUsername());
+        } else {
+            r.setCustomerName(req.customerName());
+            r.setCustomerEmail(req.customerEmail());
+        }
         r.setPartySize(req.partySize());
+        r.setTableId(req.tableId());
         r.setStartTime(req.startTime());
         r.setEndTime(req.endTime());
         r.setStatus(ReservationStatus.CONFIRMED);
@@ -139,6 +160,17 @@ public class ReservationService {
         return reservationRepo.findForDayPage(resourceId, start, end, pageable);
     }
 
+    public List<ReservationResponse> listByUser(String username) {
+        if (username == null || username.isBlank()) {
+            throw new ValidationException("Usuario autenticado es requerido");
+        }
+        User user = userService.findByUsername(username)
+                .orElseThrow(() -> new NotFoundException("Usuario %s no existe".formatted(username)));
+        return reservationRepo.findByUserId(user.getId()).stream()
+                .map(r -> toResponse(r, r.getResource().getId()))
+                .toList();
+    }
+
     /**
      * Dev A: Consulta de reservas por fecha (coherente con día UTC).
      */
@@ -184,6 +216,8 @@ public class ReservationService {
         return new ReservationResponse(
                 saved.getId(),
                 resourceId,
+                saved.getTableId(),
+                saved.getUser() != null ? saved.getUser().getId() : null,
                 saved.getCustomerName(),
                 saved.getCustomerEmail(),
                 saved.getPartySize(),

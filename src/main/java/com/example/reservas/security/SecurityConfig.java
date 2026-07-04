@@ -25,8 +25,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/v1/businesses").authenticated()
                 .requestMatchers(HttpMethod.PUT, "/v1/businesses/**").authenticated()
                 .requestMatchers(HttpMethod.POST, "/v1/businesses/*/resources").authenticated()
-                .requestMatchers(HttpMethod.POST, "/v1/reservations").authenticated()
-                .requestMatchers(HttpMethod.PATCH, "/v1/reservations/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/v1/reservations").hasAnyRole("USER", "OWNER")
+                .requestMatchers(HttpMethod.PATCH, "/v1/reservations/**").hasAnyRole("USER", "OWNER")
                 .anyRequest().permitAll()
             )
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
