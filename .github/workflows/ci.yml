@@ -12,4 +12,6 @@ jobs:
           java-version: '21'
           cache: maven
       - name: Build & Test
-        run: mvn -q -B verify
+        run: mvn clean verify
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
