@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./constants.js";
-import { requestJson } from "./api.js";
+import { getAccessToken, requestJson } from "./api.js";
 import { readSeedStorage, writeSeedStorage } from "./storage.js";
 import { normalizeRestaurantLayout } from "./layout.js";
 
@@ -15,6 +15,10 @@ export async function fetchBusiness(businessId) {
 }
 
 export async function ensureBackendSeed(restaurant) {
+  if (!getAccessToken()) {
+    return null;
+  }
+
   const seed = readSeedStorage();
   const existing = seed[restaurant.id];
 
@@ -204,11 +208,11 @@ export async function mapRestaurantToBackend(restaurant) {
   const normalized = normalizeRestaurantLayout(restaurant);
   const mapped = {
     ...normalized,
-    backendBusinessId: backend.businessId,
-    backendResourceId: backend.resourceId,
+    backendBusinessId: backend?.businessId ?? null,
+    backendResourceId: backend?.resourceId ?? null,
     tables: normalized.tables.map((table, index) => ({
       ...table,
-      resourceId: backend.resourceId,
+      resourceId: backend?.resourceId ?? null,
       x: table.x || 80 + index * 70,
       y: table.y || 90 + (index % 3) * 70,
     })),

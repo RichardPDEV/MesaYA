@@ -3,6 +3,7 @@ import { API_BASE_URL } from "./constants.js";
 let ACCESS_TOKEN = null;
 export function setAccessToken(token) { ACCESS_TOKEN = token; }
 export function clearAccessToken() { ACCESS_TOKEN = null; }
+export function getAccessToken() { return ACCESS_TOKEN; }
 
 export async function requestJson(url, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };

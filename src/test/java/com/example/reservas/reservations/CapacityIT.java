@@ -25,6 +25,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -59,7 +60,7 @@ class CapacityIT {
     resource.setCapacity(4);
 
     lenient().when(resourceRepo.findById(resource.getId())).thenReturn(Optional.of(resource));
-    lenient().when(reservationRepo.findOverlaps(eq(resource.getId()), any(), any())).thenReturn(Collections.emptyList());
+    lenient().when(reservationRepo.findOverlaps(eq(resource.getId()), anyString(), any(), any())).thenReturn(Collections.emptyList());
     lenient().when(reservationRepo.saveAndFlush(any(Reservation.class))).thenAnswer(invocation -> invocation.getArgument(0));
   }
 

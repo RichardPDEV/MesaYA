@@ -6,6 +6,13 @@ import { readClientSession, writeClientSession } from "../lib/storage.js";
 export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) {
   const [search, setSearch] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(readClientSession()?.token));
+  const [authMode, setAuthMode] = useState("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authPanelOpen, setAuthPanelOpen] = useState(false);
+  const [pendingRestaurant, setPendingRestaurant] = useState(null);
   const [profileData, setProfileData] = useState(() => {
     const session = readClientSession();
     if (!session?.token) return null;
@@ -66,6 +73,45 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
     loadProfile();
   }, [isAuthenticated]);
 
+  const handleAuthSubmit = async (e) => {
+    e?.preventDefault?.();
+    setAuthError("");
+    try {
+      if (authMode === "register") {
+        try {
+          await requestJson(`${API_BASE_URL}/auth/register`, {
+            method: "POST",
+            body: JSON.stringify({ username: authEmail, password: authPassword, displayName: authName }),
+          });
+        } catch (registerErr) {
+          console.warn("Registro previo falló, se intentará login", registerErr);
+        }
+      }
+
+      const loginResp = await requestJson(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        body: JSON.stringify({ username: authEmail, password: authPassword }),
+      });
+
+      const token = loginResp?.token;
+      if (!token) throw new Error("No se recibió un token de acceso");
+
+      const profileName = loginResp?.displayName || authName || "";
+      setAccessToken(token);
+      setIsAuthenticated(true);
+      writeClientSession({ token, username: authEmail, displayName: profileName, role: loginResp?.role || "USER" });
+      setAuthPanelOpen(false);
+      await loadProfile();
+      if (pendingRestaurant) {
+        const toOpen = pendingRestaurant;
+        setPendingRestaurant(null);
+        onSelectRestaurant?.(toOpen);
+      }
+    } catch (err) {
+      setAuthError(err.message || "No se pudo iniciar sesión");
+    }
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #f8fafc 0%, #fefefe 100%)" }}>
       <div style={{ background: "linear-gradient(135deg, #0f172a 0%, #111827 100%)", padding: "18px 24px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -80,37 +126,91 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
           placeholder="Buscar restaurante o cocina…"
           style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 999, padding: "11px 16px", color: "white", fontSize: 14, width: "min(320px, 50vw)", outline: "none" }}
         />
-        {isAuthenticated ? (
-          <div style={{ position: "relative" }}>
-            <button onClick={() => setProfileMenuOpen((value) => !value)} style={{ background: "white", color: "#0f172a", border: "none", borderRadius: 999, padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
-              👤 {profileData?.displayName || profileData?.username || "Perfil"}
-            </button>
-            {profileMenuOpen ? (
-              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: APP_CARD, borderRadius: 14, border: `1px solid ${APP_BORDER}`, minWidth: 240, boxShadow: CARD_SHADOW, zIndex: 20 }}>
-                <div style={{ padding: "14px 14px 12px", borderBottom: `1px solid ${APP_BORDER}` }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #fb923c)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800 }}>
-                      {(profileData?.displayName || profileData?.username || "U").charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 800, color: "#0f172a" }}>{profileData?.displayName || profileData?.username || "Usuario"}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{profileData?.username || "Tu cuenta"}</div>
-                    </div>
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setProfileMenuOpen((value) => !value)} style={{ width: 44, height: 44, borderRadius: "50%", border: "2px solid #ffffff", background: "linear-gradient(135deg, #f8fafc, #cbd5e1)", color: "#0f172a", cursor: "pointer", fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(15, 23, 42, 0.18)" }} aria-label="Perfil">
+            {isAuthenticated ? ((profileData?.displayName || profileData?.username || "U").charAt(0).toUpperCase()) : "👤"}
+          </button>
+          {profileMenuOpen ? (
+            <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: APP_CARD, borderRadius: 14, border: `1px solid ${APP_BORDER}`, minWidth: 220, boxShadow: CARD_SHADOW, zIndex: 20 }}>
+              {isAuthenticated ? (
+                <>
+                  <div style={{ padding: "12px 14px", borderBottom: `1px solid ${APP_BORDER}` }}>
+                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{profileData?.displayName || profileData?.username || "Usuario"}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{profileData?.username || "Tu cuenta"}</div>
                   </div>
-                  <div style={{ fontSize: 13, color: "#475569", marginTop: 6 }}>
-                    <div style={{ marginBottom: 4 }}><strong>Nombre:</strong> {profileData?.displayName || profileData?.username || "—"}</div>
-                    <div style={{ marginBottom: 4 }}><strong>Correo:</strong> {profileData?.username || "—"}</div>
-                    <div><strong>Rol:</strong> {profileData?.role || "USER"}</div>
-                  </div>
-                </div>
-                <button onClick={handleLogout} style={{ width: "100%", textAlign: "left", border: "none", background: "transparent", padding: "12px 14px", cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>
-                  Cerrar sesión
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+                  <button onClick={handleLogout} style={{ width: "100%", textAlign: "left", border: "none", background: "transparent", padding: "12px 14px", cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>
+                    Cerrar sesión
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => { setAuthMode("login"); setAuthError(""); setAuthPanelOpen(true); setProfileMenuOpen(false); }} style={{ width: "100%", textAlign: "left", border: "none", background: "transparent", padding: "12px 14px", cursor: "pointer", color: "#0f172a", fontWeight: 700 }}>
+                    Iniciar sesión
+                  </button>
+                  <button onClick={() => { setAuthMode("register"); setAuthError(""); setAuthPanelOpen(true); setProfileMenuOpen(false); }} style={{ width: "100%", textAlign: "left", border: "none", background: "transparent", padding: "12px 14px", cursor: "pointer", color: "#0f172a", fontWeight: 700 }}>
+                    Crear cuenta
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
+
+      {authPanelOpen ? (
+        <div style={{ position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15,23,42,0.5)", zIndex: 60 }}>
+          <div style={{ width: "min(680px, 92%)", background: APP_CARD, borderRadius: 20, padding: "28px 28px", boxShadow: CARD_SHADOW }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div>
+                <div style={{ color: "#64748b", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Acceso de cliente</div>
+                <h2 style={{ margin: "8px 0 6px", color: "#0f172a", fontSize: 28, fontWeight: 800 }}>{authMode === "register" ? "Crea tu cuenta" : "Inicia sesión para reservar"}</h2>
+                <p style={{ margin: 0, color: "#64748b" }}>Regístrate o entra con tu cuenta para confirmar una mesa en segundos.</p>
+              </div>
+              <button onClick={() => setAuthPanelOpen(false)} style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", color: "#64748b" }}>✕</button>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+                {[
+                  { key: "login", label: "Iniciar sesión" },
+                  { key: "register", label: "Crear cuenta" },
+                ].map((tab) => (
+                  <button key={tab.key} onClick={() => { setAuthMode(tab.key); setAuthError(""); }} style={{ flex: 1, borderRadius: 12, padding: "12px 14px", border: authMode === tab.key ? "1px solid #0f172a" : "1px solid #e2e8f0", background: authMode === tab.key ? "#0f172a" : "white", color: authMode === tab.key ? "white" : "#475569", cursor: "pointer", fontWeight: 700 }}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <form onSubmit={(e) => { handleAuthSubmit(e); }}>
+                {authMode === "register" && (
+                  <>
+                    <div style={{ marginBottom: 8 }}><label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Tu nombre</label>
+                      <input value={authName} onChange={(e) => setAuthName(e.target.value)} placeholder="Nombre completo" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, marginBottom: 12 }} />
+                    </div>
+                  </>
+                )}
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Email</label>
+                  <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="correo@ejemplo.com" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, marginBottom: 12 }} />
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Contraseña</label>
+                  <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, marginBottom: 8 }} />
+                </div>
+                {authError ? <p style={{ color: "#dc2626", fontSize: 13, margin: "6px 0 12px" }}>{authError}</p> : null}
+                <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
+                  <button type="submit" style={{ flex: 1, background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                    {authMode === "register" ? "Crear cuenta y entrar" : "Entrar"}
+                  </button>
+                  <button type="button" onClick={() => setAuthPanelOpen(false)} style={{ background: "#e6eef8", color: "#0f172a", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ maxWidth: 1040, margin: "0 auto", padding: "32px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "end", marginBottom: 18, gap: 12, flexWrap: "wrap" }}>
@@ -129,7 +229,16 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
             return (
               <div
                 key={r.id}
-                onClick={() => onSelectRestaurant(r)}
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    setPendingRestaurant(r);
+                    setAuthMode("login");
+                    setAuthError("");
+                    setAuthPanelOpen(true);
+                    return;
+                  }
+                  onSelectRestaurant(r);
+                }}
                 style={{ background: APP_CARD, borderRadius: 20, border: `1.5px solid ${APP_BORDER}`, overflow: "hidden", cursor: "pointer", transition: "all 0.2s", boxShadow: CARD_SHADOW }}
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = CARD_SHADOW_HOVER; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = CARD_SHADOW; }}
