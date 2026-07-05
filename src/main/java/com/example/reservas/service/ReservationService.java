@@ -74,7 +74,7 @@ public class ReservationService {
             throw new ValidationException("partySize excede la capacidad del recurso");
         }
 
-        List<Reservation> overlaps = reservationRepo.findOverlaps(resource.getId(), req.startTime(), req.endTime());
+        List<Reservation> overlaps = reservationRepo.findOverlaps(resource.getId(), req.tableId(), req.startTime(), req.endTime());
         if (!overlaps.isEmpty()) {
             throw new ValidationException("Ya existe una reserva que solapa ese horario");
         }

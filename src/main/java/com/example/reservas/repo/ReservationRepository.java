@@ -15,11 +15,12 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     @Query("""
       select r from Reservation r
       where r.resource.id = :resourceId
+        and r.tableId = :tableId
         and r.status = com.example.reservas.domain.ReservationStatus.CONFIRMED
         and r.startTime < :end
         and r.endTime > :start
       """)
-    List<Reservation> findOverlaps(Long resourceId, OffsetDateTime start, OffsetDateTime end);
+    List<Reservation> findOverlaps(Long resourceId, String tableId, OffsetDateTime start, OffsetDateTime end);
 
     @Query("""
       select r from Reservation r

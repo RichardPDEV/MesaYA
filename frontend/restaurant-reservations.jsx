@@ -161,13 +161,14 @@ export default function App() {
       ? restaurant
       : await mapRestaurantToBackend(restaurant);
 
-    if (!restaurantWithBackend?.backendResourceId) {
+    const resourceId = restaurantWithBackend?.backendResourceId || restaurantWithBackend?.resourceId;
+    if (!resourceId) {
       throw new Error("No se pudo preparar el restaurante para reservar");
     }
 
     const startTime = buildIsoDateTime(data.date, data.time);
     const payload = {
-      resourceId: data.resourceId || restaurantWithBackend.backendResourceId,
+      resourceId: data.resourceId || resourceId,
       tableId: data.tableId,
       customerName: data.name,
       customerEmail: data.email,

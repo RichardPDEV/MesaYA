@@ -68,6 +68,7 @@ class ReservationRepositoryIT {
         Reservation a = new Reservation();
         a.setResource(resource); a.setCustomerName("A"); a.setCustomerEmail("a@a.com");
         a.setPartySize(2); a.setStartTime(s1); a.setEndTime(e1);
+        a.setTableId("T1");
         reservationRepo.saveAndFlush(a);
 
         Reservation b = new Reservation();
@@ -75,9 +76,10 @@ class ReservationRepositoryIT {
         b.setPartySize(2);
         b.setStartTime(s1.plusMinutes(30)); // solapa
         b.setEndTime(e1.plusMinutes(30));
+        b.setTableId("T1");
 
         // No constraint at DB level for overlaps; validate mediante la consulta de solapes
-        var overlaps = reservationRepo.findOverlaps(resource.getId(), b.getStartTime(), b.getEndTime());
+        var overlaps = reservationRepo.findOverlaps(resource.getId(), b.getTableId(), b.getStartTime(), b.getEndTime());
         Assertions.assertFalse(overlaps.isEmpty(), "Se esperaba detectar solapes usando findOverlaps");
     }
 }
