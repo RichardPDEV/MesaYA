@@ -4,6 +4,29 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: reservas
+          POSTGRES_USER: reservas
+          POSTGRES_PASSWORD: reservas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U reservas -d reservas"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -16,3 +39,8 @@ jobs:
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
           APP_JWT_SECRET: "ci-test-secret-please-change-000000000000"
+          DB_URL: "jdbc:postgresql://localhost:5432/reservas"
+          DB_USERNAME: "reservas"
+          DB_PASSWORD: "reservas"
+          REDIS_HOST: "localhost"
+          REDIS_PORT: "6379"
