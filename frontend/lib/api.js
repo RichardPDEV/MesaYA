@@ -5,6 +5,12 @@ export function setAccessToken(token) { ACCESS_TOKEN = token; }
 export function clearAccessToken() { ACCESS_TOKEN = null; }
 export function getAccessToken() { return ACCESS_TOKEN; }
 
+function notifyAuthLogout() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("auth:logout"));
+  }
+}
+
 export async function requestJson(url, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (ACCESS_TOKEN) headers["Authorization"] = `Bearer ${ACCESS_TOKEN}`;
@@ -38,6 +44,8 @@ export async function requestJson(url, options = {}) {
       } catch {
         // ignore
       }
+      clearAccessToken();
+      notifyAuthLogout();
     }
     const err = new Error(payload?.message || `Request failed with status ${response.status}`);
     err.status = response.status;

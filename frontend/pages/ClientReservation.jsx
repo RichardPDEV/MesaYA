@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW } from "../lib/constants.js";
-import { setAccessToken, clearAccessToken, requestJson } from "../lib/api.js";
-import { readClientSession, writeClientSession } from "../lib/storage.js";
+import { requestJson } from "../lib/api.js";
 import FloorPlan from "../components/FloorPlan.jsx";
 import { Label, inputStyle } from "../components/FormFields.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const parseTimeToMinutes = (time) => {
   const [hours, minutes] = (time || "00:00").split(":").map(Number);
@@ -37,13 +37,13 @@ const getDurationMinutes = (startTime, endTime) => parseTimeToMinutes(endTime) -
 const hasTimeOverlap = (startA, endA, startB, endB) => startA < endB && startB < endA;
 
 export default function ClientReservation({ restaurant, onBack, onConfirm }) {
+  const { user, isAuthenticated, logout } = useAuth();
   const [selectedTable, setSelectedTable] = useState(null);
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [time, setTime] = useState("20:00");
   const [endTime, setEndTime] = useState("22:00");
-  const sessionProfile = readClientSession();
-  const [name, setName] = useState(sessionProfile?.displayName || "");
-  const [email, setEmail] = useState(sessionProfile?.username || "");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [guests, setGuests] = useState(2);
   const [step, setStep] = useState(1); // 1=select table, 2=fill form, 3=confirmed
   const [authMode, setAuthMode] = useState("login");
@@ -51,12 +51,6 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(readClientSession()?.token));
-  const [profileData, setProfileData] = useState(() => {
-    const session = readClientSession();
-    if (!session?.token) return null;
-    return { username: session.username, displayName: session.displayName, role: session.role };
-  });
   const [profileError, setProfileError] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [displayTables, setDisplayTables] = useState(() => restaurant?.tables || []);
@@ -211,14 +205,10 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", credentials: "include" });
+      await logout();
     } catch (err) {
       console.warn("Logout request failed", err);
     }
-    clearAccessToken();
-    writeClientSession(null);
-    setIsAuthenticated(false);
-    setProfileData(null);
     setProfileError("");
     setProfileMenuOpen(false);
     setName("");
@@ -228,95 +218,20 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     setAuthPassword("");
   };
 
-  const loadProfile = async () => {
-    try {
-      const data = await requestJson(`${API_BASE_URL}/auth/me`);
-      setProfileData(data || null);
-      setProfileError("");
-    } catch (err) {
-      const fallbackSession = readClientSession();
-      if (fallbackSession?.token) {
-        setProfileData({
-          username: fallbackSession.username,
-          displayName: fallbackSession.displayName,
-          role: fallbackSession.role,
-        });
-        setProfileError("");
-        return;
-      }
-      if (err?.status === 401) {
-        await handleLogout();
-      } else {
-        setProfileError("No se pudo cargar tu perfil");
-      }
-    }
-  };
-
   useEffect(() => {
     if (!isAuthenticated) {
-      setProfileData(null);
       setProfileError("");
+      setName("");
+      setEmail("");
       return;
     }
-    const session = readClientSession();
-    if (session?.token) {
-      setAccessToken(session.token);
-      setProfileData({
-        username: session.username,
-        displayName: session.displayName,
-        role: session.role,
-      });
-      setName(session.displayName || "");
-      setEmail(session.username || "");
-    }
-    loadProfile();
-  }, [isAuthenticated]);
+    if (user?.displayName) setName(user.displayName);
+    if (user?.username) setEmail(user.username);
+  }, [isAuthenticated, user?.displayName, user?.username]);
 
   useEffect(() => {
     loadAvailability();
   }, [restaurant, date, time, endTime, guests]);
-
-  useEffect(() => {
-    if (profileData?.displayName) setName(profileData.displayName);
-    if (profileData?.username) setEmail(profileData.username);
-  }, [profileData?.displayName, profileData?.username]);
-
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    setAuthError("");
-    try {
-      if (authMode === "register") {
-        try {
-          await requestJson(`${API_BASE_URL}/auth/register`, {
-            method: "POST",
-            body: JSON.stringify({ username: authEmail, password: authPassword, displayName: authName }),
-          });
-        } catch (registerErr) {
-          console.warn("Registro previo falló, se intentará login", registerErr);
-        }
-      }
-
-      const loginResp = await requestJson(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        body: JSON.stringify({ username: authEmail, password: authPassword }),
-      });
-
-      const token = loginResp?.token;
-      if (!token) {
-        throw new Error("No se recibió un token de acceso");
-      }
-
-      const profileName = loginResp?.displayName || authName || "";
-      setAccessToken(token);
-      setIsAuthenticated(true);
-      setName(profileName);
-      setEmail(authEmail);
-      writeClientSession({ token, username: authEmail, displayName: profileName, role: loginResp?.role || "USER" });
-      await loadProfile();
-    } catch (err) {
-      setAuthError(err.message || "No se pudo iniciar sesión");
-    }
-  };
 
   useEffect(() => {
     if (!selectedTable) return;
@@ -464,8 +379,8 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
               {isAuthenticated ? (
                 <>
                   <div style={{ padding: "12px 14px", borderBottom: `1px solid ${APP_BORDER}` }}>
-                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{profileData?.displayName || profileData?.username || "Usuario"}</div>
-                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{profileData?.username || email || "Tu cuenta"}</div>
+                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{user?.displayName || user?.username || "Usuario"}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{user?.username || email || "Tu cuenta"}</div>
                   </div>
                   <button onClick={handleLogout} style={{ width: "100%", textAlign: "left", border: "none", background: "transparent", padding: "12px 14px", cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>
                     Cerrar sesión

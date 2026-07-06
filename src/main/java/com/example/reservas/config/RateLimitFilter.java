@@ -23,6 +23,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final Map<String, Bucket> globalBuckets = new ConcurrentHashMap<>();
     private final Map<String, Bucket> hotBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> authBuckets = new ConcurrentHashMap<>();
 
     private Bucket newGlobalBucket() {
         Bandwidth limit = Bandwidth.classic(100, Refill.greedy(100, Duration.ofMinutes(1)));
@@ -31,6 +32,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private Bucket newHotBucket() {
         Bandwidth limit = Bandwidth.classic(20, Refill.greedy(20, Duration.ofMinutes(1)));
+        return Bucket.builder().addLimit(limit).build();
+    }
+
+    private Bucket newAuthBucket() {
+        Bandwidth limit = Bandwidth.classic(5, Refill.greedy(5, Duration.ofMinutes(1)));
         return Bucket.builder().addLimit(limit).build();
     }
 
@@ -44,11 +50,23 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         boolean isHot = ("/v1/availability".equals(path) && "GET".equalsIgnoreCase(method))
                      || ("/v1/reservations".equals(path) && "POST".equalsIgnoreCase(method));
+        boolean isAuth = "/auth/login".equals(path)
+                || "/auth/register".equals(path)
+                || "/auth/refresh".equals(path);
 
         // Hot bucket primero
         if (isHot) {
             String key = ip + "|HOT";
             Bucket b = hotBuckets.computeIfAbsent(key, k -> newHotBucket());
+            if (!b.tryConsume(1)) {
+                tooMany(response, 60);
+                return;
+            }
+        }
+
+        if (isAuth) {
+            String key = ip + "|AUTH";
+            Bucket b = authBuckets.computeIfAbsent(key, k -> newAuthBucket());
             if (!b.tryConsume(1)) {
                 tooMany(response, 60);
                 return;

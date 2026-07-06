@@ -36,3 +36,20 @@ management:
 logging:
   level:
     root: INFO
+
+# Example mail settings - configure using environment variables in production
+spring:
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:25}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls.enable: ${MAIL_SMTP_STARTTLS:false}
+
+app:
+  mail:
+    from: ${MAIL_FROM:reservas@example.com}

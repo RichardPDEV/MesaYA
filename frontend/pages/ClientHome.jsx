@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW, CARD_SHADOW_HOVER } from "../lib/constants.js";
-import { setAccessToken, clearAccessToken, requestJson } from "../lib/api.js";
-import { readClientSession, writeClientSession } from "../lib/storage.js";
+import { APP_CARD, APP_BORDER, CARD_SHADOW, CARD_SHADOW_HOVER } from "../lib/constants.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) {
+  const { user, isAuthenticated, isLoading, authError: authContextError, login, register, logout } = useAuth();
   const [search, setSearch] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(readClientSession()?.token));
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
@@ -13,11 +12,6 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
   const [authError, setAuthError] = useState("");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [pendingRestaurant, setPendingRestaurant] = useState(null);
-  const [profileData, setProfileData] = useState(() => {
-    const session = readClientSession();
-    if (!session?.token) return null;
-    return { username: session.username, displayName: session.displayName, role: session.role };
-  });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileError, setProfileError] = useState("");
   const filtered = restaurants.filter((r) => {
@@ -29,79 +23,25 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", credentials: "include" });
+      await logout();
     } catch (err) {
       console.warn("Logout request failed", err);
     }
-    clearAccessToken();
-    writeClientSession(null);
-    setIsAuthenticated(false);
-    setProfileData(null);
     setProfileError("");
     setProfileMenuOpen(false);
   };
-
-  const loadProfile = async () => {
-    try {
-      const data = await requestJson(`${API_BASE_URL}/auth/me`);
-      setProfileData(data);
-      setProfileError("");
-    } catch (err) {
-      if (err?.status === 401) {
-        await handleLogout();
-      } else {
-        setProfileError("No se pudo cargar tu perfil");
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setProfileData(null);
-      setProfileError("");
-      return;
-    }
-    const session = readClientSession();
-    if (session?.token) {
-      setAccessToken(session.token);
-      setProfileData({
-        username: session.username,
-        displayName: session.displayName,
-        role: session.role,
-      });
-    }
-    loadProfile();
-  }, [isAuthenticated]);
 
   const handleAuthSubmit = async (e) => {
     e?.preventDefault?.();
     setAuthError("");
     try {
       if (authMode === "register") {
-        try {
-          await requestJson(`${API_BASE_URL}/auth/register`, {
-            method: "POST",
-            body: JSON.stringify({ username: authEmail, password: authPassword, displayName: authName }),
-          });
-        } catch (registerErr) {
-          console.warn("Registro previo falló, se intentará login", registerErr);
-        }
+        await register({ username: authEmail, password: authPassword, displayName: authName });
+      } else {
+        await login({ username: authEmail, password: authPassword });
       }
-
-      const loginResp = await requestJson(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        body: JSON.stringify({ username: authEmail, password: authPassword }),
-      });
-
-      const token = loginResp?.token;
-      if (!token) throw new Error("No se recibió un token de acceso");
-
-      const profileName = loginResp?.displayName || authName || "";
-      setAccessToken(token);
-      setIsAuthenticated(true);
-      writeClientSession({ token, username: authEmail, displayName: profileName, role: loginResp?.role || "USER" });
       setAuthPanelOpen(false);
-      await loadProfile();
+      setProfileError("");
       if (pendingRestaurant) {
         const toOpen = pendingRestaurant;
         setPendingRestaurant(null);
@@ -128,15 +68,15 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
         />
         <div style={{ position: "relative" }}>
           <button onClick={() => setProfileMenuOpen((value) => !value)} style={{ width: 44, height: 44, borderRadius: "50%", border: "2px solid #ffffff", background: "linear-gradient(135deg, #f8fafc, #cbd5e1)", color: "#0f172a", cursor: "pointer", fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(15, 23, 42, 0.18)" }} aria-label="Perfil">
-            {isAuthenticated ? ((profileData?.displayName || profileData?.username || "U").charAt(0).toUpperCase()) : "👤"}
+            {isAuthenticated ? ((user?.displayName || user?.username || "U").charAt(0).toUpperCase()) : "👤"}
           </button>
           {profileMenuOpen ? (
             <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: APP_CARD, borderRadius: 14, border: `1px solid ${APP_BORDER}`, minWidth: 220, boxShadow: CARD_SHADOW, zIndex: 20 }}>
               {isAuthenticated ? (
                 <>
                   <div style={{ padding: "12px 14px", borderBottom: `1px solid ${APP_BORDER}` }}>
-                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{profileData?.displayName || profileData?.username || "Usuario"}</div>
-                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{profileData?.username || "Tu cuenta"}</div>
+                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{user?.displayName || user?.username || "Usuario"}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{user?.username || "Tu cuenta"}</div>
                   </div>
                   <button onClick={handleLogout} style={{ width: "100%", textAlign: "left", border: "none", background: "transparent", padding: "12px 14px", cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>
                     Cerrar sesión
