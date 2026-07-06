@@ -7,6 +7,15 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/reservas}
     username: ${DB_USERNAME:reservas}
     password: ${DB_PASSWORD:reservas}
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:2525}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
   jpa:
     hibernate:
       ddl-auto: validate
