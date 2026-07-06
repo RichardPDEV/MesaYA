@@ -26,7 +26,7 @@ public class EmailService {
             msg.setFrom(fromAddress);
             msg.setTo(to);
             msg.setSubject("Código de confirmación");
-            msg.setText(String.format("Tu código de confirmación es: %s\nSi no solicitaste este código, ignora este correo.", code));
+            msg.setText(String.format("Tu código de confirmación es:" + code  +  "%s\nSi no solicitaste este código, ignora este correo.", code));
             mailSender.send(msg);
             log.info("Sent confirmation code to {}", to);
         } catch (Exception ex) {
