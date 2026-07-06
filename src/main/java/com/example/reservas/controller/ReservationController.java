@@ -92,10 +92,11 @@ public class ReservationController {
             @Parameter(description = "ID de la reserva a cancelar", required = true, example = "1")
             @PathVariable @NotNull Long id,
             
-            @Valid @RequestBody CancelReservationRequest body
+            @Valid @RequestBody CancelReservationRequest body,
+            Authentication authentication
     ) {
         // Usamos "now" en UTC para alinear con la lógica de negocio
-        return reservationService.cancel(id, body.reason(), OffsetDateTime.now(ZoneOffset.UTC));
+        return reservationService.cancel(id, body.reason(), OffsetDateTime.now(ZoneOffset.UTC), authentication != null ? authentication.getName() : null);
     }
 }
 

@@ -40,8 +40,8 @@ public class ReservationController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Obtener reserva por id")
-    public ReservationResponse get(@PathVariable Long id) {
-        Reservation r = reservationService.getEntity(id);
+    public ReservationResponse get(@PathVariable Long id, Authentication authentication) {
+        Reservation r = reservationService.getEntityForCurrentUser(id, authentication != null ? authentication.getName() : null);
         return new ReservationResponse(
             r.getId(), r.getResource().getId(), r.getTableId(), r.getUser() != null ? r.getUser().getId() : null, r.getCustomerName(), r.getCustomerEmail(),
             r.getPartySize(), r.getStartTime(), r.getEndTime(), r.getStatus().name()
@@ -73,9 +73,8 @@ public class ReservationController {
 
     @PatchMapping("/{id}/cancel")
     @Operation(summary = "Cancelar reserva (aplica política)")
-    public ReservationResponse cancel(@PathVariable Long id, @Valid @RequestBody CancelReservationRequest req) {
-        // Coordinación con Dev A: implementar este método en ReservationService (ver bloque 9)
-        var resp = reservationService.cancel(id, req.reason(), OffsetDateTime.now(ZoneOffset.UTC));
+    public ReservationResponse cancel(@PathVariable Long id, @Valid @RequestBody CancelReservationRequest req, Authentication authentication) {
+        var resp = reservationService.cancel(id, req.reason(), OffsetDateTime.now(ZoneOffset.UTC), authentication != null ? authentication.getName() : null);
         return resp;
     }
 }

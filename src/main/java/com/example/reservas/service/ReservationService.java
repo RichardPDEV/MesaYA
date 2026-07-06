@@ -105,8 +105,8 @@ public class ReservationService {
      * Cancel: clasifica FREE vs LATE según CancellationPolicy y limpia caché de availability (UTC).
      */
     @Transactional
-    public ReservationResponse cancel(Long id, String reason, OffsetDateTime now) {
-        Reservation r = getEntity(id);
+    public ReservationResponse cancel(Long id, String reason, OffsetDateTime now, String currentUsername) {
+        Reservation r = getEntityForCurrentUser(id, currentUsername);
 
         if (r.getStatus() != ReservationStatus.CONFIRMED) {
             throw new ValidationException("Reserva no está en estado CONFIRMED");
@@ -169,6 +169,27 @@ public class ReservationService {
         return reservationRepo.findByUserId(user.getId()).stream()
                 .map(r -> toResponse(r, r.getResource().getId()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Reservation getEntityForCurrentUser(Long id, String currentUsername) {
+        if (currentUsername == null || currentUsername.isBlank()) {
+            throw new org.springframework.security.access.AccessDeniedException("Autenticación requerida");
+        }
+
+        Reservation reservation = getEntity(id);
+        if (reservation.getUser() == null) {
+            throw new org.springframework.security.access.AccessDeniedException("No tienes acceso a esta reserva");
+        }
+
+        User currentUser = userService.findByUsername(currentUsername)
+                .orElseThrow(() -> new org.springframework.security.access.AccessDeniedException("Autenticación requerida"));
+
+        if (!currentUser.getId().equals(reservation.getUser().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("No tienes acceso a esta reserva");
+        }
+
+        return reservation;
     }
 
     /**

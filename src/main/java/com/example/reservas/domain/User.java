@@ -23,6 +23,15 @@ public class User {
     @Column(name = "refresh_token")
     private String refreshToken;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    @Column(name = "confirmation_code")
+    private String confirmationCode;
+
+    @Column(name = "confirmation_expires_at")
+    private OffsetDateTime confirmationExpiresAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role = UserRole.USER;
@@ -41,4 +50,13 @@ public class User {
     public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
     public UserRole getRole() { return role; }
     public void setRole(UserRole role) { this.role = role; }
+
+    public boolean isEmailVerified() { return emailVerified; }
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+    public String getConfirmationCode() { return confirmationCode; }
+    public void setConfirmationCode(String confirmationCode) { this.confirmationCode = confirmationCode; }
+
+    public OffsetDateTime getConfirmationExpiresAt() { return confirmationExpiresAt; }
+    public void setConfirmationExpiresAt(OffsetDateTime confirmationExpiresAt) { this.confirmationExpiresAt = confirmationExpiresAt; }
 }
