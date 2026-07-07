@@ -13,20 +13,17 @@ public class ProdStartupValidator {
     private final String dbUrl;
     private final String dbUser;
     private final String dbPassword;
-    private final String redisHost;
     private final String jwtSecret;
 
     public ProdStartupValidator(Environment env,
                                 @Value("${DB_URL:}") String dbUrl,
                                 @Value("${DB_USERNAME:}") String dbUser,
                                 @Value("${DB_PASSWORD:}") String dbPassword,
-                                @Value("${REDIS_HOST:}") String redisHost,
                                 @Value("${APP_JWT_SECRET:}") String jwtSecret) {
         this.env = env;
         this.dbUrl = dbUrl;
         this.dbUser = dbUser;
         this.dbPassword = dbPassword;
-        this.redisHost = redisHost;
         this.jwtSecret = jwtSecret;
     }
 
@@ -36,8 +33,8 @@ public class ProdStartupValidator {
             return;
         }
 
-        if (isBlank(dbUrl) || isBlank(dbUser) || isBlank(dbPassword) || isBlank(redisHost) || isBlank(jwtSecret)) {
-            throw new IllegalStateException("Producción requiere todas las variables: DB_URL, DB_USERNAME, DB_PASSWORD, REDIS_HOST, APP_JWT_SECRET");
+        if (isBlank(dbUrl) || isBlank(dbUser) || isBlank(dbPassword) || isBlank(jwtSecret)) {
+            throw new IllegalStateException("Producción requiere todas las variables: DB_URL, DB_USERNAME, DB_PASSWORD, APP_JWT_SECRET");
         }
         if (dbPassword.equals("changeme")) {
             throw new IllegalStateException("DB_PASSWORD no puede usar el valor por defecto inseguro changeme en producción");

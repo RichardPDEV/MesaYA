@@ -3,11 +3,11 @@
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Maven](https://img.shields.io/badge/Build-Maven-blue.svg)](https://maven.apache.org/)
-[![Redis](https://img.shields.io/badge/Cache-Redis-red.svg)](https://redis.io/)
+[![Cache](https://img.shields.io/badge/Cache-InMemory-blue.svg)](https://docs.spring.io/spring-framework/docs/current/reference/html/core.html#cache)
 [![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-336791.svg)](https://www.postgresql.org/)
 [![Testcontainers](https://img.shields.io/badge/Testcontainers-Ready-0db7ed.svg)](https://www.testcontainers.org/)
 
-API REST para gestionar reservas con reglas de negocio (capacidad, solapes, cancelación FREE/LATE), disponibilidad diaria cacheada en Redis, y migraciones con Flyway. Incluye CI con GitHub Actions.
+API REST para gestionar reservas con reglas de negocio (capacidad, solapes, cancelación FREE/LATE), disponibilidad diaria cacheada en memoria, y migraciones con Flyway. Incluye CI con GitHub Actions.
 
 - Cálculo de día y claves de caché normalizadas en UTC.
 - Separación clara entre Core (Richard) y API (Juan).
@@ -33,7 +33,7 @@ API REST para gestionar reservas con reglas de negocio (capacidad, solapes, canc
 ---
 
 ## Características
-- Disponibilidad por recurso y día con caché Redis (`availability`).
+- Disponibilidad por recurso y día con caché en memoria (`availability`).
 - Invalidación automática de caché al crear o cancelar reservas.
 - Reglas de negocio: capacidad, detección de solapes, cancelación FREE vs LATE según política.
 - DTOs y controladores REST aislando la lógica de negocio.
@@ -42,8 +42,8 @@ API REST para gestionar reservas con reglas de negocio (capacidad, solapes, canc
 ---
 
 ## Stack
-- Java 21, Spring Boot 3.x, Spring Data JPA, Spring Cache (Redis)
-- PostgreSQL, Redis
+- Java 21, Spring Boot 3.x, Spring Data JPA, Spring Cache (simple)
+- PostgreSQL
 - Flyway para migraciones
 - JUnit 5, Testcontainers
 - Maven
@@ -53,8 +53,8 @@ API REST para gestionar reservas con reglas de negocio (capacidad, solapes, canc
 ## Requisitos
 - JDK 21+
 - Maven 3.9+
-- Docker (recomendado para Postgres/Redis y Testcontainers)
-- Redis 7.x, PostgreSQL 16.x
+- Docker (recomendado para Postgres y Testcontainers)
+- PostgreSQL 16.x
 
 ---
 
@@ -102,19 +102,7 @@ spring:
     enabled: true
 
   cache:
-    type: redis
-    redis:
-      time-to-live: 15m       # TTL para disponibilidad
-
-  # Nota: según tu configuración, puedes usar una de estas variantes:
-  data:
-    redis:
-      host: ${SPRING_DATA_REDIS_HOST:localhost}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
-  # o la convención clásica:
-  # redis:
-  #   host: ${SPRING_REDIS_HOST:localhost}
-  #   port: ${SPRING_REDIS_PORT:6379}
+    type: simple
 
 server:
   port: 8080
@@ -133,7 +121,6 @@ public class Application {
 
 Variables de entorno habituales:
 - `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`
-- `SPRING_DATA_REDIS_HOST` / `SPRING_DATA_REDIS_PORT` (o `SPRING_REDIS_HOST` / `SPRING_REDIS_PORT`)
 - `SPRING_FLYWAY_ENABLED=true`
 
 ---
@@ -172,7 +159,6 @@ Variables típicas en `docker-compose.yml`:
 - `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/reservas`
 - `SPRING_DATASOURCE_USERNAME=reservas`
 - `SPRING_DATASOURCE_PASSWORD=reservas`
-- `SPRING_DATA_REDIS_HOST=redis` (o `SPRING_REDIS_HOST=redis` según tu app)
 
 ---
 
@@ -246,9 +232,7 @@ Prueba con swagger: http://localhost:8080/swagger-ui.html.
 
 ## Solución de problemas
 
-- Redis no conecta:
-  - Verifica host/puerto y si tu app usa `spring.data.redis.*` o `spring.redis.*`.
-  - En Docker Compose, el host suele ser `redis`.
+- La aplicación no usa Redis actualmente. Si algo requiere caché persistente en un futuro, puedes habilitar Redis con `spring.cache.type=redis`.
 
 - Diferencias horarias:
   - Tiempos en ISO-8601 con zona (`Z`/offset).

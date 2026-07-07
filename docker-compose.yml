@@ -8,8 +8,6 @@ services:
     ports: ["8092:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-  redis:
-    image: redis:7-alpine
   api:
     build: .
     env_file: .env
@@ -17,12 +15,10 @@ services:
       - DB_URL=jdbc:postgresql://postgres:5432/reservas
       - DB_USERNAME=reservas
       - DB_PASSWORD=reservas
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
       - APP_JWT_SECRET=dev-secret-key-1234567890-abcdef
       - APP_COOKIE_SECURE=false
       - SPRING_PROFILES_ACTIVE=prod
-    depends_on: [postgres, redis]
+    depends_on: [postgres]
     ports: ["8091:8080"]
   frontend:
     build:
