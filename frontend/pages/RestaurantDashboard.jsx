@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { APP_CARD, APP_BORDER, CARD_SHADOW, TABLE_COLORS } from "../lib/constants.js";
+import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW, TABLE_COLORS } from "../lib/constants.js";
 import { readSaveQueue, enqueueSaveItem, removeSaveItemAt } from "../lib/storage.js";
+import { requestJson } from "../lib/api.js";
 import { persistRestaurantProfile } from "../lib/restaurantBackend.js";
 import { createLayoutElement, normalizeRestaurantLayout, sameRestaurantId } from "../lib/layout.js";
 import { readRegisteredRestaurants } from "../lib/storage.js";
@@ -61,6 +62,7 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
   const [floorCount, setFloorCount] = useState(1);
   const [floorNames, setFloorNames] = useState({ 1: "Piso principal" });
   const [selectedLayoutElementId, setSelectedLayoutElementId] = useState(null);
+  const [lastReservationsSync, setLastReservationsSync] = useState(null);
   const dragIntentRef = useRef(false);
   const stopLayoutAction = (e) => {
     e.stopPropagation();
@@ -176,10 +178,10 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     setTimeout(() => setSaveStatus(""), 2500);
   };
 
-  const syncRest = (updated) => {
+  const syncRest = useCallback((updated) => {
     setRestList(prev => prev.map(r => r.id === updated.id ? updated : r));
     setActiveRest(updated);
-  };
+  }, []);
 
   const updateTableStatus = (tableId, status) => {
     const updated = { ...activeRest, tables: (activeRest.tables || []).map(t => t.id === tableId ? { ...t, status } : t) };
@@ -457,6 +459,20 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
   const activeTables = activeRest.tables || [];
   const activeReservations = activeRest.reservations || [];
+  const sortedReservations = [...activeReservations].sort((a, b) => {
+    const dateA = `${a?.date || ""}T${a?.time || "00:00"}`;
+    const dateB = `${b?.date || ""}T${b?.time || "00:00"}`;
+    return dateA.localeCompare(dateB);
+  });
+  const today = new Date().toISOString().split("T")[0];
+  const todaysReservations = sortedReservations.filter((res) => res?.date === today);
+  const upcomingReservations = sortedReservations.filter((res) => (res?.date || "") >= today && res?.date !== today);
+  const reservationGroups = sortedReservations.reduce((groups, reservation) => {
+    const key = reservation?.date || today;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(reservation);
+    return groups;
+  }, {});
 
   const registerRestaurant = () => {
     const newR = { id: Date.now(), ...regForm, image: "🍴", tables: [], reservations: [], openTime: "12:00", closeTime: "23:00" };
@@ -468,6 +484,57 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
   const restaurantTables = activeRest?.tables || [];
   const restaurantElements = activeRest?.layoutElements || [];
+
+  useEffect(() => {
+    if (!activeRest) return;
+
+    const resourceId = activeRest.backendResourceId || activeRest.resourceId;
+    if (!resourceId) return;
+
+    let cancelled = false;
+    const refreshReservations = async () => {
+      try {
+        const reservations = await requestJson(`${API_BASE_URL}/api/resources/${resourceId}/reservations?date=${today}`);
+        if (cancelled) return;
+
+        const now = new Date();
+        const stateByTable = new Map();
+        (reservations || []).forEach((reservation) => {
+          if (!reservation?.tableId) return;
+          const start = reservation?.startTime ? new Date(reservation.startTime) : null;
+          const end = reservation?.endTime ? new Date(reservation.endTime) : null;
+          if (!start || !end) return;
+          const isActive = start <= now && end >= now;
+          const resolvedState = isActive ? "occupied" : "reserved";
+          const previous = stateByTable.get(reservation.tableId);
+          if (!previous || (resolvedState === "occupied" && previous !== "occupied")) {
+            stateByTable.set(reservation.tableId, resolvedState);
+          }
+        });
+
+        const nextTables = (activeRest.tables || []).map((table) => {
+          const resolvedState = stateByTable.get(table.id);
+          if (resolvedState) {
+            return { ...table, status: resolvedState };
+          }
+          return table.status === "occupied" || table.status === "reserved" ? table : { ...table, status: "available" };
+        });
+
+        const nextRest = { ...activeRest, tables: nextTables, reservations: reservations || [] };
+        syncRest(nextRest);
+        setLastReservationsSync(new Date());
+      } catch (error) {
+        console.warn("No se pudo refrescar reservas del restaurante:", error);
+      }
+    };
+
+    refreshReservations();
+    const intervalId = window.setInterval(refreshReservations, 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeRest?.id, activeRest?.backendResourceId, activeRest?.resourceId, syncRest, today]);
   const getFloorLabel = (floorValue) => {
     const floorNumber = Number(floorValue) || 1;
     return floorNames[floorNumber] || (floorNumber === 1 ? "Piso principal" : `Piso ${floorNumber}`);
@@ -998,32 +1065,59 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
           {/* RESERVATIONS */}
           {tab === "reservations" && (
             <div>
-              <h2 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: "#0f172a" }}>Reservas de hoy</h2>
-              {activeReservations.length === 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0f172a" }}>Reservas</h2>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ background: "#eff6ff", color: "#1d4ed8", borderRadius: 999, padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>
+                    Hoy: {todaysReservations.length}
+                  </span>
+                  <span style={{ background: "#fef9c3", color: "#a16207", borderRadius: 999, padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>
+                    Próximas: {upcomingReservations.length}
+                  </span>
+                  {lastReservationsSync && (
+                    <span style={{ color: "#64748b", fontSize: 12, fontWeight: 600 }}>
+                      Actualizado {lastReservationsSync.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {sortedReservations.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "48px 24px", color: "#94a3b8" }}>
                   <p style={{ fontSize: 40, marginBottom: 12 }}>📅</p>
                   <p style={{ fontSize: 16 }}>No hay reservas registradas</p>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {activeReservations.map(res => {
-                    const table = activeTables.find(t => t.id === res.tableId);
-                    return (
-                      <div key={res.id} style={{ background: "white", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "18px 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                        <div style={{ background: "#eff6ff", borderRadius: 12, padding: "12px 16px", textAlign: "center", minWidth: 64 }}>
-                          <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#2563eb" }}>{res.time}</p>
-                          <p style={{ margin: 0, fontSize: 12, color: "#60a5fa" }}>{res.date.split("-")[2]}/{res.date.split("-")[1]}</p>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ margin: "0 0 4px", fontWeight: 700, color: "#0f172a", fontSize: 16 }}>{res.name}</p>
-                          <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>Mesa {table?.label} · {res.guests} personas</p>
-                        </div>
-                        <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600 }}>
-                          ✓ {res.status === "confirmed" ? "Confirmada" : res.status}
-                        </span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {Object.entries(reservationGroups).sort(([a], [b]) => a.localeCompare(b)).map(([day, reservations]) => (
+                    <div key={day} style={{ background: "white", border: "1.5px solid #e2e8f0", borderRadius: 16, padding: "16px 18px" }}>
+                      <div style={{ marginBottom: 12, fontWeight: 800, color: "#0f172a" }}>
+                        {day === today ? "Hoy" : day}
                       </div>
-                    );
-                  })}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {reservations.map((res) => {
+                          const table = activeTables.find((t) => t.id === res.tableId);
+                          const isActive = res?.status === "confirmed" || res?.status === "occupied";
+                          return (
+                            <div key={res.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                              <div style={{ background: isActive ? "#dbeafe" : "#fef9c3", borderRadius: 12, padding: "10px 14px", textAlign: "center", minWidth: 70 }}>
+                                <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: isActive ? "#2563eb" : "#a16207" }}>{res.time}</p>
+                                <p style={{ margin: 0, fontSize: 12, color: isActive ? "#60a5fa" : "#ca8a04" }}>{res.date.split("-")[2]}/{res.date.split("-")[1]}</p>
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <p style={{ margin: "0 0 4px", fontWeight: 700, color: "#0f172a", fontSize: 16 }}>{res.name || res.customerName || "Cliente"}</p>
+                                <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>
+                                  Mesa {table?.label || res.tableId} · {res.guests || res.partySize || 2} personas
+                                </p>
+                              </div>
+                              <span style={{ background: isActive ? "#dcfce7" : "#fef9c3", color: isActive ? "#15803d" : "#a16207", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600 }}>
+                                {isActive ? "En curso" : "Reservada"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

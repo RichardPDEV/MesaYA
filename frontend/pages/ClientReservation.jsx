@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW } from "../lib/constants.js";
 import { requestJson } from "../lib/api.js";
 import FloorPlan from "../components/FloorPlan.jsx";
@@ -63,26 +63,36 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const [availabilityWindows, setAvailabilityWindows] = useState([]);
   const [availabilityMessage, setAvailabilityMessage] = useState("");
   const [requestedIntervalAvailable, setRequestedIntervalAvailable] = useState(true);
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
 
   const buildAvailability = (tables, reservations) => {
-    const { start, end } = buildReservationWindow(date, time);
-    const reservedTableIds = new Set(
-      (reservations || [])
-        .filter((res) => {
-          if (!res?.tableId) return false;
-          const reservationStart = res?.startTime ? new Date(res.startTime) : null;
-          const reservationEnd = res?.endTime ? new Date(res.endTime) : null;
-          return reservationStart && reservationEnd && hasTimeOverlap(reservationStart, reservationEnd, start, end);
-        })
-        .map((res) => res.tableId)
-    );
+    const { start, end } = buildReservationWindow(date, time, endTime);
+    const now = new Date();
+    const reservationStateByTable = new Map();
+
+    (reservations || []).forEach((res) => {
+      if (!res?.tableId) return;
+      const reservationStart = res?.startTime ? new Date(res.startTime) : null;
+      const reservationEnd = res?.endTime ? new Date(res.endTime) : null;
+      if (!reservationStart || !reservationEnd || !hasTimeOverlap(reservationStart, reservationEnd, start, end)) {
+        return;
+      }
+
+      const isActive = reservationStart <= now && reservationEnd >= now;
+      const resolvedState = isActive ? "occupied" : "reserved";
+      const previous = reservationStateByTable.get(res.tableId);
+      if (!previous || (resolvedState === "occupied" && previous !== "occupied")) {
+        reservationStateByTable.set(res.tableId, resolvedState);
+      }
+    });
 
     return (tables || []).map((table) => {
       const seatsFit = Number(table.seats || 0) >= Math.max(1, Number(guests || 1));
-      const isBooked = reservedTableIds.has(table.id);
+      const tableState = reservationStateByTable.get(table.id);
+      const status = tableState ? (seatsFit ? tableState : "occupied") : seatsFit ? "available" : "occupied";
       return {
         ...table,
-        status: isBooked ? "reserved" : seatsFit ? "available" : "occupied",
+        status,
       };
     });
   };
@@ -146,7 +156,7 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     };
   };
 
-  const loadAvailability = async () => {
+  const loadAvailability = useCallback(async () => {
     if (!restaurant) return;
     setLoadingReservations(true);
     setReservationLoadError("");
@@ -160,6 +170,7 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
       setAvailabilityWindows([]);
       setAvailabilityMessage("Sugerencias de horario no disponibles para este restaurante.");
       setRequestedIntervalAvailable(true);
+      setLastRefreshAt(new Date());
       setLoadingReservations(false);
       return;
     }
@@ -184,9 +195,10 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
       setAvailabilityMessage("No se pudo obtener sugerencias de horario.");
       setRequestedIntervalAvailable(true);
     } finally {
+      setLastRefreshAt(new Date());
       setLoadingReservations(false);
     }
-  };
+  }, [date, endTime, guests, restaurant, time]);
 
   useEffect(() => {
     const floors = Array.from(new Set((restaurant?.tables || []).map((table) => Number(table.floor || 1))));
@@ -230,8 +242,25 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   }, [isAuthenticated, user?.displayName, user?.username]);
 
   useEffect(() => {
+    if (!restaurant) return;
+
     loadAvailability();
-  }, [restaurant, date, time, endTime, guests]);
+    const intervalId = window.setInterval(() => {
+      loadAvailability();
+    }, 10000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadAvailability();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadAvailability, restaurant]);
 
   useEffect(() => {
     if (!selectedTable) return;
