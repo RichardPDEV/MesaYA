@@ -36,6 +36,30 @@ const getDurationMinutes = (startTime, endTime) => parseTimeToMinutes(endTime) -
 
 const hasTimeOverlap = (startA, endA, startB, endB) => startA < endB && startB < endA;
 
+const CLIENT_RESERVATIONS_KEY = "mesaYa-client-reservations";
+
+const loadStoredReservations = () => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CLIENT_RESERVATIONS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+};
+
+const saveStoredReservation = (reservation) => {
+  if (typeof window === "undefined") return;
+  try {
+    const prev = loadStoredReservations();
+    const next = [reservation, ...prev.filter((item) => item.id !== reservation.id)].slice(0, 5);
+    window.localStorage.setItem(CLIENT_RESERVATIONS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage failures
+  }
+};
+
 export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const { user, isAuthenticated, logout } = useAuth();
   const [selectedTable, setSelectedTable] = useState(null);
@@ -64,6 +88,8 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const [availabilityMessage, setAvailabilityMessage] = useState("");
   const [requestedIntervalAvailable, setRequestedIntervalAvailable] = useState(true);
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  const [confirmationSummary, setConfirmationSummary] = useState(null);
+  const [savedReservations, setSavedReservations] = useState([]);
 
   const buildAvailability = (tables, reservations) => {
     const { start, end } = buildReservationWindow(date, time, endTime);
@@ -201,6 +227,10 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   }, [date, endTime, guests, restaurant, time]);
 
   useEffect(() => {
+    setSavedReservations(loadStoredReservations());
+  }, []);
+
+  useEffect(() => {
     const floors = Array.from(new Set((restaurant?.tables || []).map((table) => Number(table.floor || 1))));
     floors.sort((a, b) => a - b);
     if (!floors.length) return;
@@ -319,6 +349,16 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
       : "";
   const canConfirmReservation = !durationError && requestedIntervalAvailable;
   const suggestedEndMax = formatMinutesToTime(Math.min(parseTimeToMinutes(time) + 120, closeHour * 60));
+  const canReviewReservation = Boolean(
+    selectedTable &&
+    name &&
+    email &&
+    guests >= 1 &&
+    guests <= 8 &&
+    (!selectedTable?.seats || guests <= selectedTable.seats) &&
+    selectedTable?.status === "available" &&
+    canConfirmReservation
+  );
 
   const handleGuestsChange = (value) => {
     const parsedValue = Number(value);
@@ -330,10 +370,15 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     setGuests(clampedValue);
   };
 
+  const handleReviewReservation = () => {
+    if (!canReviewReservation) return;
+    setStep(2);
+  };
+
   const handleConfirm = async () => {
-    if (!name || !email || !selectedTable || guests < 1 || guests > 8 || guests > selectedTable.seats || durationError || !requestedIntervalAvailable) return;
+    if (!canReviewReservation) return;
     try {
-      await onConfirm({
+      const created = await onConfirm({
         tableId: selectedTable.id,
         date,
         time,
@@ -344,26 +389,62 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
         floor: selectedTable.floor || 1,
         resourceId: restaurant.backendResourceId,
       });
+      const reservationSummary = {
+        id: created?.id?.toString() || `R${Date.now()}`,
+        restaurantName: restaurant.name,
+        tableLabel: selectedTable.label,
+        date,
+        time,
+        endTime,
+        guests,
+        email,
+        createdAt: new Date().toISOString(),
+      };
+      saveStoredReservation(reservationSummary);
+      setSavedReservations(loadStoredReservations());
+      setConfirmationSummary(reservationSummary);
       setStep(3);
     } catch (err) {
       await loadAvailability();
       setProfileError(err.message || "No se pudo confirmar la reserva");
+      setStep(2);
     }
   };
 
   if (step === 3) {
     return (
       <div style={{ minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div style={{ background: APP_CARD, borderRadius: 24, padding: "48px 40px", textAlign: "center", maxWidth: 440, width: "100%", boxShadow: CARD_SHADOW, border: `1px solid ${APP_BORDER}` }}>
+        <div style={{ background: APP_CARD, borderRadius: 24, padding: "48px 40px", textAlign: "center", maxWidth: 480, width: "100%", boxShadow: CARD_SHADOW, border: `1px solid ${APP_BORDER}` }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
           <h2 style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>¡Reserva confirmada!</h2>
-          <p style={{ color: "#64748b", marginBottom: 24, lineHeight: 1.6 }}>
-            Tu mesa <strong>{selectedTable.label}</strong> en <strong>{restaurant.name}</strong> está reservada para el{" "}
-            <strong>{date}</strong> a las <strong>{time}</strong>.
+          <p style={{ color: "#64748b", marginBottom: 20, lineHeight: 1.6 }}>
+            Tu mesa <strong>{selectedTable?.label}</strong> en <strong>{restaurant.name}</strong> está reservada para el <strong>{date}</strong> a las <strong>{time}</strong>.
           </p>
-          <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 12, padding: "16px 20px", textAlign: "left", marginBottom: 28 }}>
-            <p style={{ margin: 0, color: "#15803d", fontSize: 14 }}>📧 Confirmación enviada a <strong>{email}</strong></p>
+
+          <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 14, padding: "16px 18px", textAlign: "left", marginBottom: 16 }}>
+            <p style={{ margin: "0 0 6px", color: "#15803d", fontSize: 14 }}><strong>Reserva:</strong> {confirmationSummary?.id || "Guardada correctamente"}</p>
+            <p style={{ margin: "0 0 6px", color: "#15803d", fontSize: 14 }}><strong>Horario:</strong> {time} - {endTime}</p>
+            <p style={{ margin: 0, color: "#15803d", fontSize: 14 }}><strong>Personas:</strong> {guests}</p>
           </div>
+
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 14, padding: "14px 16px", textAlign: "left", marginBottom: 18 }}>
+            <p style={{ margin: "0 0 8px", fontWeight: 700, color: "#0f172a" }}>Seguimiento</p>
+            <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: 14, lineHeight: 1.6 }}>
+              <li>Recibirás la confirmación en tu email.</li>
+              <li>Te recomendamos llegar 10 minutos antes.</li>
+              <li>Tu reserva queda guardada en este dispositivo para seguimiento rápido.</li>
+            </ul>
+          </div>
+
+          {savedReservations.length > 0 ? (
+            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 14, padding: "12px 14px", textAlign: "left", marginBottom: 18 }}>
+              <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#1d4ed8" }}>Última reserva guardada</p>
+              <p style={{ margin: 0, color: "#1e40af", fontSize: 13 }}>
+                {savedReservations[0].restaurantName} · Mesa {savedReservations[0].tableLabel} · {savedReservations[0].date} {savedReservations[0].time}
+              </p>
+            </div>
+          ) : null}
+
           <button onClick={onBack} style={{ background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer", width: "100%" }}>
             Buscar otro restaurante
           </button>
@@ -499,60 +580,89 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
 
           {/* Right: Form */}
           <div style={{ background: APP_CARD, borderRadius: 18, border: `1.5px solid ${APP_BORDER}`, padding: "28px 24px", position: "sticky", top: 24, boxShadow: CARD_SHADOW }}>
-          <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: "#0f172a" }}>Datos de la reserva</h3>
+          <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
+            {step === 2 ? "Revisa tu reserva" : "Datos de la reserva"}
+          </h3>
 
-          <Label>Fecha</Label>
-          <input type="date" value={date} min={today} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
+          {step === 2 ? (
+            <div>
+              <div style={{ background: "linear-gradient(135deg, #f0fdf4, #ecfdf5)", border: "1.5px solid #86efac", borderRadius: 14, padding: "16px 18px", marginBottom: 16 }}>
+                <p style={{ margin: "0 0 8px", fontWeight: 800, color: "#166534" }}>Resumen de la reserva</p>
+                <p style={{ margin: "0 0 6px", color: "#166534", fontSize: 14 }}><strong>Restaurante:</strong> {restaurant.name}</p>
+                <p style={{ margin: "0 0 6px", color: "#166534", fontSize: 14 }}><strong>Mesa:</strong> {selectedTable?.label || "—"}</p>
+                <p style={{ margin: "0 0 6px", color: "#166534", fontSize: 14 }}><strong>Fecha:</strong> {date}</p>
+                <p style={{ margin: "0 0 6px", color: "#166534", fontSize: 14 }}><strong>Horario:</strong> {time} - {endTime}</p>
+                <p style={{ margin: 0, color: "#166534", fontSize: 14 }}><strong>Personas:</strong> {guests}</p>
+              </div>
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+                <p style={{ margin: 0, color: "#475569", fontSize: 13 }}><strong>Cliente:</strong> {name}</p>
+                <p style={{ margin: "6px 0 0", color: "#475569", fontSize: 13 }}><strong>Email:</strong> {email}</p>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button onClick={() => setStep(1)} style={{ flex: 1, background: "#e2e8f0", color: "#0f172a", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                  Editar
+                </button>
+                <button onClick={handleConfirm} style={{ flex: 1, background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                  Confirmar reserva
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <Label>Fecha</Label>
+              <input type="date" value={date} min={today} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
 
-          <Label>Hora de inicio</Label>
-          <input type="time" value={time} step="1800" list="reservation-times" onChange={(e) => setTime(e.target.value)} style={inputStyle} />
-          <datalist id="reservation-times">
-            {times.map((t) => <option key={t} value={t} />)}
-          </datalist>
+              <Label>Hora de inicio</Label>
+              <input type="time" value={time} step="1800" list="reservation-times" onChange={(e) => setTime(e.target.value)} style={inputStyle} />
+              <datalist id="reservation-times">
+                {times.map((t) => <option key={t} value={t} />)}
+              </datalist>
 
-          <Label>Hora de fin</Label>
-          <input
-            type="time"
-            value={endTime}
-            step="1800"
-            min={time}
-            max={suggestedEndMax}
-            list="reservation-times"
-            onChange={(e) => setEndTime(e.target.value)}
-            style={{ ...inputStyle, marginBottom: 4 }}
-          />
-          <p style={{ color: durationError ? "#dc2626" : "#64748b", fontSize: 12, margin: "4px 0 12px" }}>
-            {durationError || `La reserva puede durar hasta 2 horas. Fin máximo ${suggestedEndMax}.`}
-          </p>
-          {selectedTable && availabilityMessage ? (
-            <p style={{ color: requestedIntervalAvailable ? "#15803d" : "#b91c1c", fontSize: 13, margin: "0 0 12px" }}>
-              {availabilityMessage}
-            </p>
-          ) : null}
+              <Label>Hora de fin</Label>
+              <input
+                type="time"
+                value={endTime}
+                step="1800"
+                min={time}
+                max={suggestedEndMax}
+                list="reservation-times"
+                onChange={(e) => setEndTime(e.target.value)}
+                style={{ ...inputStyle, marginBottom: 4 }}
+              />
+              <p style={{ color: durationError ? "#dc2626" : "#64748b", fontSize: 12, margin: "4px 0 12px" }}>
+                {durationError || `La reserva puede durar hasta 2 horas. Fin máximo ${suggestedEndMax}.`}
+              </p>
+              {selectedTable && availabilityMessage ? (
+                <p style={{ color: requestedIntervalAvailable ? "#15803d" : "#b91c1c", fontSize: 13, margin: "0 0 12px" }}>
+                  {availabilityMessage}
+                </p>
+              ) : null}
 
-          <Label>Número de personas</Label>
-          <p style={{ color: "#64748b", fontSize: 12, margin: "-4px 0 10px" }}>Elige entre 1 y 8 personas.</p>
-          <input
-            type="number"
-            min="1"
-            max="8"
-            value={guests}
-            onChange={(e) => handleGuestsChange(e.target.value)}
-            style={{ ...inputStyle, marginBottom: 16 }}
-          />
+              <Label>Número de personas</Label>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "-4px 0 10px" }}>Elige entre 1 y 8 personas.</p>
+              <input
+                type="number"
+                min="1"
+                max="8"
+                value={guests}
+                onChange={(e) => handleGuestsChange(e.target.value)}
+                style={{ ...inputStyle, marginBottom: 16 }}
+              />
 
-          <Label>Tu nombre</Label>
-          <input placeholder="Nombre completo" value={name} onChange={e => setName(e.target.value)} style={inputStyle} />
+              <Label>Tu nombre</Label>
+              <input placeholder="Nombre completo" value={name} onChange={e => setName(e.target.value)} style={inputStyle} />
 
-          <Label>Email</Label>
-          <input type="email" placeholder="correo@ejemplo.com" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+              <Label>Email</Label>
+              <input type="email" placeholder="correo@ejemplo.com" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
 
-          <button
-            onClick={handleConfirm}
-            disabled={!selectedTable || !name || !email || guests < 1 || guests > 8 || (selectedTable?.seats && guests > selectedTable.seats) || selectedTable?.status !== "available" || !canConfirmReservation}
-            style={{ width: "100%", background: selectedTable && name && email && guests >= 1 && guests <= 8 && (!selectedTable?.seats || guests <= selectedTable.seats) && selectedTable?.status === "available" && canConfirmReservation ? "#0f172a" : "#e2e8f0", color: selectedTable && name && email && guests >= 1 && guests <= 8 && (!selectedTable?.seats || guests <= selectedTable.seats) && selectedTable?.status === "available" && canConfirmReservation ? "white" : "#94a3b8", border: "none", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: selectedTable && name && email && guests >= 1 && guests <= 8 && (!selectedTable?.seats || guests <= selectedTable.seats) && selectedTable?.status === "available" && canConfirmReservation ? "pointer" : "not-allowed", marginTop: 8, transition: "all 0.2s" }}>
-            {selectedTable ? `Reservar mesa ${selectedTable.label}` : "Selecciona una mesa"}
-          </button>
+              <button
+                onClick={handleReviewReservation}
+                disabled={!canReviewReservation}
+                style={{ width: "100%", background: canReviewReservation ? "#0f172a" : "#e2e8f0", color: canReviewReservation ? "white" : "#94a3b8", border: "none", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: canReviewReservation ? "pointer" : "not-allowed", marginTop: 8, transition: "all 0.2s" }}>
+                {selectedTable ? `Revisar reserva de la mesa ${selectedTable.label}` : "Selecciona una mesa"}
+              </button>
+            </>
+          )}
 
           <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, marginTop: 12, marginBottom: 0 }}>
             Cancela gratis hasta 2 horas antes

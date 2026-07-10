@@ -10,3 +10,4 @@ build
 *.log
 Dockerfile*
 README.md
+!target/*.jar
