@@ -4,6 +4,7 @@ import { requestJson } from "../lib/api.js";
 import FloorPlan from "../components/FloorPlan.jsx";
 import { Label, inputStyle } from "../components/FormFields.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { getReservationStartTime, getReservationStatusMeta, isUpcomingReservation } from "../lib/reservationUtils.js";
 
 const parseTimeToMinutes = (time) => {
   const [hours, minutes] = (time || "00:00").split(":").map(Number);
@@ -53,11 +54,24 @@ const saveStoredReservation = (reservation) => {
   if (typeof window === "undefined") return;
   try {
     const prev = loadStoredReservations();
-    const next = [reservation, ...prev.filter((item) => item.id !== reservation.id)].slice(0, 5);
+    const next = [reservation, ...prev.filter((item) => item.id !== reservation.id)].slice(0, 8);
     window.localStorage.setItem(CLIENT_RESERVATIONS_KEY, JSON.stringify(next));
   } catch {
     // ignore storage failures
   }
+};
+
+const formatReservationDateTime = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 export default function ClientReservation({ restaurant, onBack, onConfirm }) {
@@ -90,6 +104,59 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
   const [confirmationSummary, setConfirmationSummary] = useState(null);
   const [savedReservations, setSavedReservations] = useState([]);
+  const [myReservations, setMyReservations] = useState([]);
+  const [myReservationsLoading, setMyReservationsLoading] = useState(false);
+  const [cancelingReservationId, setCancelingReservationId] = useState(null);
+  const [reservationToReschedule, setReservationToReschedule] = useState(null);
+  const [reminderEnabled, setReminderEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem("mesaYa-reminders-enabled") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const [reminderPermission, setReminderPermission] = useState(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+    return window.Notification.permission;
+  });
+  const [reminderMessage, setReminderMessage] = useState("");
+
+  const loadMyReservations = useCallback(async () => {
+    if (!isAuthenticated) {
+      setMyReservations([]);
+      return;
+    }
+
+    setMyReservationsLoading(true);
+    try {
+      const response = await requestJson(`${API_BASE_URL}/v1/reservations/mine`);
+      const normalized = (Array.isArray(response) ? response : []).map((item) => {
+        const startDate = item?.startTime ? new Date(item.startTime) : null;
+        const formattedTime = item?.time || (startDate ? startDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }) : null);
+        return {
+          id: item?.id,
+          restaurantName: item?.restaurantName || restaurant?.name || "Restaurante",
+          tableLabel: item?.tableLabel || item?.tableId || "Mesa",
+          startTime: item?.startTime,
+          endTime: item?.endTime,
+          status: item?.status || "CONFIRMED",
+          guests: item?.partySize || item?.guests || 1,
+          date: item?.date || (startDate ? startDate.toISOString().slice(0, 10) : null),
+          time: formattedTime,
+          email: item?.email || "",
+          createdAt: item?.createdAt || item?.startTime,
+          cancellationReason: item?.cancellationReason || null,
+        };
+      });
+      setMyReservations(normalized);
+    } catch (err) {
+      console.warn("No se pudieron cargar las reservas del usuario:", err);
+      setMyReservations([]);
+    } finally {
+      setMyReservationsLoading(false);
+    }
+  }, [isAuthenticated, restaurant?.name]);
 
   const buildAvailability = (tables, reservations) => {
     const { start, end } = buildReservationWindow(date, time, endTime);
@@ -229,6 +296,57 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   useEffect(() => {
     setSavedReservations(loadStoredReservations());
   }, []);
+
+  useEffect(() => {
+    if (!reminderEnabled || typeof window === "undefined") return;
+
+    const upcomingEntries = [...myReservations, ...savedReservations]
+      .map((reservation) => ({ reservation, startTime: getReservationStartTime(reservation) }))
+      .filter(({ startTime }) => startTime && isUpcomingReservation(startTime))
+      .sort((a, b) => a.startTime - b.startTime)
+      .slice(0, 3);
+
+    if (!upcomingEntries.length) {
+      return;
+    }
+
+    const timers = upcomingEntries.map(({ reservation, startTime }) => {
+      const reminderAt = startTime.getTime() - 60 * 60 * 1000;
+      const remaining = reminderAt - Date.now();
+      if (remaining <= 0) return null;
+      return window.setTimeout(() => {
+        const label = reservation.restaurantName || "tu reserva";
+        const startLabel = startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+        setReminderMessage(`Tu reserva en ${label} empieza a las ${startLabel}.`);
+        if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
+          new window.Notification("Recordatorio de reserva", {
+            body: `Tu reserva en ${label} empieza a las ${startLabel}.`,
+            icon: "/favicon.svg",
+            tag: "mesa-ya-reminder",
+          });
+        }
+        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+          navigator.serviceWorker.ready.then((registration) => {
+            registration.showNotification("Recordatorio de reserva", {
+              body: `Tu reserva en ${label} empieza a las ${startLabel}.`,
+              icon: "/favicon.svg",
+              tag: "mesa-ya-reminder",
+            });
+          }).catch(() => {
+            // ignore service worker issues
+          });
+        }
+      }, remaining);
+    }).filter(Boolean);
+
+    return () => {
+      timers.forEach((timerId) => window.clearTimeout(timerId));
+    };
+  }, [reminderEnabled, myReservations, savedReservations]);
+
+  useEffect(() => {
+    loadMyReservations();
+  }, [loadMyReservations]);
 
   useEffect(() => {
     const floors = Array.from(new Set((restaurant?.tables || []).map((table) => Number(table.floor || 1))));
@@ -378,31 +496,72 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const handleConfirm = async () => {
     if (!canReviewReservation) return;
     try {
-      const created = await onConfirm({
-        tableId: selectedTable.id,
-        date,
-        time,
-        endTime,
-        name,
-        email,
-        guests,
-        floor: selectedTable.floor || 1,
-        resourceId: restaurant.backendResourceId,
-      });
-      const reservationSummary = {
-        id: created?.id?.toString() || `R${Date.now()}`,
-        restaurantName: restaurant.name,
-        tableLabel: selectedTable.label,
-        date,
-        time,
-        endTime,
-        guests,
-        email,
-        createdAt: new Date().toISOString(),
-      };
+      let created;
+      let reservationSummary;
+
+      if (reservationToReschedule?.id) {
+        const updated = await requestJson(`${API_BASE_URL}/v1/reservations/${reservationToReschedule.id}/reschedule`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            resourceId: restaurant.backendResourceId || restaurant.resourceId,
+            tableId: selectedTable.id,
+            startTime: new Date(`${date}T${time}:00`).toISOString(),
+            endTime: new Date(`${date}T${endTime}:00`).toISOString(),
+            reason: "Reprogramada por el cliente",
+          }),
+        });
+        created = updated;
+        reservationSummary = {
+          id: updated?.id?.toString() || reservationToReschedule.id,
+          restaurantName: restaurant.name,
+          tableLabel: selectedTable.label,
+          date,
+          time,
+          endTime,
+          guests,
+          email,
+          createdAt: new Date().toISOString(),
+          startTime: new Date(`${date}T${time}:00`).toISOString(),
+          status: "CONFIRMED",
+          statusMessage: "Tu reserva fue reprogramada correctamente.",
+        };
+        setMyReservations((current) => current.map((reservation) => reservation.id === reservationToReschedule.id ? { ...reservation, ...reservationSummary, status: "CONFIRMED" } : reservation));
+        setSavedReservations((current) => current.map((reservation) => reservation.id === reservationToReschedule.id ? { ...reservation, ...reservationSummary, status: "CONFIRMED" } : reservation));
+      } else {
+        created = await onConfirm({
+          tableId: selectedTable.id,
+          date,
+          time,
+          endTime,
+          name,
+          email,
+          guests,
+          floor: selectedTable.floor || 1,
+          resourceId: restaurant.backendResourceId,
+        });
+        reservationSummary = {
+          id: created?.id?.toString() || `R${Date.now()}`,
+          restaurantName: restaurant.name,
+          tableLabel: selectedTable.label,
+          date,
+          time,
+          endTime,
+          guests,
+          email,
+          createdAt: new Date().toISOString(),
+          startTime: new Date(`${date}T${time}:00`).toISOString(),
+          status: "CONFIRMED",
+          statusMessage: "Tu reserva está confirmada y lista para disfrutar.",
+        };
+      }
+
       saveStoredReservation(reservationSummary);
       setSavedReservations(loadStoredReservations());
       setConfirmationSummary(reservationSummary);
+      if (isAuthenticated) {
+        await loadMyReservations();
+      }
+      setReservationToReschedule(null);
       setStep(3);
     } catch (err) {
       await loadAvailability();
@@ -411,6 +570,105 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     }
   };
 
+  const handleEnableReminders = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setReminderMessage("Las alertas del navegador no están disponibles en este dispositivo.");
+      return;
+    }
+
+    const permission = await window.Notification.requestPermission();
+    setReminderPermission(permission);
+    if (permission === "granted") {
+      setReminderEnabled(true);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem("mesaYa-reminders-enabled", "true");
+        } catch {
+          // ignore storage errors
+        }
+      }
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          registration.showNotification("Recordatorios activados", {
+            body: "Recibirás avisos de tus reservas próximas.",
+            icon: "/favicon.svg",
+            tag: "mesa-ya-reminder",
+          });
+        } catch {
+          // ignore notification registration issues
+        }
+      }
+      setReminderMessage("Recordatorios activados. Te enviaremos un aviso 1 hora antes.");
+    } else {
+      setReminderEnabled(false);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem("mesaYa-reminders-enabled", "false");
+        } catch {
+          // ignore storage errors
+        }
+      }
+      setReminderMessage("Las alertas quedaron desactivadas para este navegador.");
+    }
+  };
+
+  const handleCancelReservation = async (reservationId) => {
+    if (!reservationId) return;
+    setCancelingReservationId(reservationId);
+    try {
+      await requestJson(`${API_BASE_URL}/v1/reservations/${reservationId}/cancel`, {
+        method: "PATCH",
+        body: JSON.stringify({ reason: "Cancelada por el cliente" }),
+      });
+      setMyReservations((current) => current.map((reservation) => reservation.id === reservationId ? { ...reservation, status: "CANCELLED" } : reservation));
+      setSavedReservations((current) => current.map((reservation) => reservation.id === reservationId ? { ...reservation, status: "CANCELLED" } : reservation));
+      setReminderMessage("Tu reserva se canceló correctamente. Puedes volver a reservar cuando quieras.");
+      await loadMyReservations();
+      setProfileError("");
+    } catch (err) {
+      setProfileError(err.message || "No se pudo cancelar la reserva");
+    } finally {
+      setCancelingReservationId(null);
+    }
+  };
+
+  const handleRebookReservation = (reservation) => {
+    if (!reservation) return;
+    const nextDate = reservation.date || (reservation.startTime ? new Date(reservation.startTime).toISOString().slice(0, 10) : date);
+    const nextTime = reservation.time || (reservation.startTime ? new Date(reservation.startTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }) : time);
+    const nextEndTime = reservation.endTime || addMinutesToTime(nextTime, 90);
+
+    setReservationToReschedule(reservation);
+    setDate(nextDate);
+    setTime(nextTime);
+    setEndTime(nextEndTime);
+    setGuests(Math.max(1, reservation.guests || guests));
+    setSelectedTable(null);
+    setStep(1);
+    setProfileError("");
+    setAvailabilityMessage("Se preparó la reprogramación de tu reserva. Elige una mesa nueva y confirma el cambio.");
+    setReminderMessage(`Se preparó la reprogramación para ${nextDate} a las ${nextTime}.`);
+  };
+
+  const combinedReservations = [...myReservations, ...savedReservations.filter((item) => !myReservations.some((existing) => existing.id === item.id))];
+  const sortedReservations = [...combinedReservations].sort((a, b) => {
+    const startA = getReservationStartTime(a);
+    const startB = getReservationStartTime(b);
+    if (!startA && !startB) return 0;
+    if (!startA) return 1;
+    if (!startB) return -1;
+    return startA.getTime() - startB.getTime();
+  });
+  const upcomingReservations = sortedReservations.filter((reservation) => {
+    const startTime = getReservationStartTime(reservation);
+    return Boolean(startTime && isUpcomingReservation(startTime) && !["CANCELLED", "LATE_CANCELLED"].includes(reservation?.status || ""));
+  });
+  const recentReservations = sortedReservations.filter((reservation) => {
+    const startTime = getReservationStartTime(reservation);
+    return Boolean(startTime && !isUpcomingReservation(startTime));
+  });
+
   if (step === 3) {
     return (
       <div style={{ minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
@@ -418,7 +676,7 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
           <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
           <h2 style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>¡Reserva confirmada!</h2>
           <p style={{ color: "#64748b", marginBottom: 20, lineHeight: 1.6 }}>
-            Tu mesa <strong>{selectedTable?.label}</strong> en <strong>{restaurant.name}</strong> está reservada para el <strong>{date}</strong> a las <strong>{time}</strong>.
+            Tu mesa <strong>{selectedTable?.label}</strong> en <strong>{restaurant.name}</strong> quedó reservada para el <strong>{date}</strong> a las <strong>{time}</strong>.
           </p>
 
           <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 14, padding: "16px 18px", textAlign: "left", marginBottom: 16 }}>
@@ -430,10 +688,23 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
           <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 14, padding: "14px 16px", textAlign: "left", marginBottom: 18 }}>
             <p style={{ margin: "0 0 8px", fontWeight: 700, color: "#0f172a" }}>Seguimiento</p>
             <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: 14, lineHeight: 1.6 }}>
-              <li>Recibirás la confirmación en tu email.</li>
+              <li>Recibirás la confirmación por correo.</li>
               <li>Te recomendamos llegar 10 minutos antes.</li>
-              <li>Tu reserva queda guardada en este dispositivo para seguimiento rápido.</li>
+              <li>Tu reserva quedó guardada para seguimiento rápido con estado actualizado.</li>
             </ul>
+          </div>
+
+          <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 14, padding: "12px 14px", textAlign: "left", marginBottom: 18 }}>
+            <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#92400e" }}>Recordatorios</p>
+            <p style={{ margin: 0, color: "#78350f", fontSize: 13 }}>
+              {reminderMessage || "Te enviaremos un recordatorio 1 hora antes para que no se te olvide."}
+            </p>
+            <button
+              onClick={handleEnableReminders}
+              style={{ marginTop: 10, border: "none", background: "#f59e0b", color: "white", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
+            >
+              {reminderPermission === "granted" ? "Recordatorios activos" : "Activar alertas del navegador"}
+            </button>
           </div>
 
           {savedReservations.length > 0 ? (
@@ -442,6 +713,51 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
               <p style={{ margin: 0, color: "#1e40af", fontSize: 13 }}>
                 {savedReservations[0].restaurantName} · Mesa {savedReservations[0].tableLabel} · {savedReservations[0].date} {savedReservations[0].time}
               </p>
+            </div>
+          ) : null}
+
+          {(isAuthenticated || myReservations.length > 0 || savedReservations.length > 0) ? (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 14, padding: "14px 16px", textAlign: "left", marginBottom: 18 }}>
+              <p style={{ margin: "0 0 8px", fontWeight: 700, color: "#0f172a" }}>Historial y seguimiento</p>
+              <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 12 }}>
+                Tu historial se actualiza con estado en tiempo real para que tengas una visión más completa de tus reservas.
+              </p>
+              {myReservationsLoading ? (
+                <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>Cargando tus reservas…</p>
+              ) : myReservations.length > 0 ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {myReservations.slice(0, 3).map((reservation) => (
+                    <div key={reservation.id} style={{ border: "1px solid #dbeafe", borderRadius: 10, padding: "10px 12px", background: "white" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 700, color: "#0f172a", fontSize: 13 }}>{reservation.restaurantName}</p>
+                          <p style={{ margin: "2px 0 0", color: "#475569", fontSize: 12 }}>{reservation.tableLabel ? `Mesa ${reservation.tableLabel}` : "Mesa sin asignar"}</p>
+                          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 11 }}>{formatReservationDateTime(reservation.startTime)}</p>
+                        </div>
+                        <span style={{ fontSize: 12, color: reservation.status === "CONFIRMED" ? "#15803d" : "#b45309", fontWeight: 700 }}>
+                          {reservation.status === "CONFIRMED" ? "Confirmada" : reservation.status === "CANCELLED" ? "Cancelada" : reservation.status}
+                        </span>
+                      </div>
+                      {reservation.status === "CONFIRMED" && isUpcomingReservation(reservation.startTime) ? (
+                        <button
+                          onClick={() => handleCancelReservation(reservation.id)}
+                          disabled={cancelingReservationId === reservation.id}
+                          style={{ marginTop: 8, border: "none", background: "#fee2e2", color: "#b91c1c", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
+                        >
+                          {cancelingReservationId === reservation.id ? "Cancelando…" : "Cancelar"}
+                        </button>
+                      ) : null}
+                      {reservation.status === "CONFIRMED" && !isUpcomingReservation(reservation.startTime) ? (
+                        <span style={{ marginTop: 8, display: "inline-block", fontSize: 12, color: "#64748b" }}>
+                          Se registró como reserva pasada.
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>Aún no tienes reservas registradas en tu cuenta.</p>
+              )}
             </div>
           ) : null}
 
@@ -576,6 +892,13 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
               </div>
             </div>
           )}
+
+          <div style={{ marginTop: 16, background: "#fefce8", border: "1px solid #fde68a", borderRadius: 14, padding: "12px 14px" }}>
+            <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#92400e" }}>Estado del cliente</p>
+            <p style={{ margin: 0, color: "#78350f", fontSize: 13 }}>
+              Las reservas ahora muestran si están próximas, en curso, finalizadas o canceladas para que el seguimiento sea mucho más claro.
+            </p>
+          </div>
         </div>
 
           {/* Right: Form */}
@@ -664,8 +987,73 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
             </>
           )}
 
+          {(upcomingReservations.length > 0 || recentReservations.length > 0) ? (
+            <div style={{ marginTop: 16, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 14, padding: "14px 16px" }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700, color: "#0f172a", fontSize: 14 }}>Historial y seguimiento</p>
+              <div style={{ display: "grid", gap: 8 }}>
+                {upcomingReservations.slice(0, 2).map((reservation) => {
+                  const statusMeta = getReservationStatusMeta(reservation);
+                  return (
+                    <div key={`upcoming-${reservation.id}`} style={{ border: "1px solid #dbeafe", borderRadius: 10, padding: "10px 12px", background: "white" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 700, color: "#0f172a", fontSize: 13 }}>{reservation.restaurantName}</p>
+                          <p style={{ margin: "2px 0 0", color: "#475569", fontSize: 12 }}>{formatReservationDateTime(getReservationStartTime(reservation))}</p>
+                        </div>
+                        <span style={{ fontSize: 12, color: statusMeta.tone, fontWeight: 700 }}>{statusMeta.label}</span>
+                      </div>
+                      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.4 }}>{statusMeta.message}</p>
+                      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 11 }}>
+                        {statusMeta.state === "active" ? "La reserva ya está en desarrollo." : statusMeta.state === "finished" ? "La reserva ya fue cerrada." : statusMeta.state === "cancelled" ? "La reserva quedó cancelada." : "Reserva registrada en tu cuenta"}
+                      </p>
+                      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 11 }}>
+                        {reservation.createdAt ? `Creada el ${formatReservationDateTime(reservation.createdAt)}` : "Reserva registrada en tu cuenta"}
+                      </p>
+                      {reservation.cancellationReason ? (
+                        <p style={{ margin: "4px 0 0", color: "#b45309", fontSize: 11 }}>Motivo: {reservation.cancellationReason}</p>
+                      ) : null}
+                      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                        {statusMeta.canCancel ? (
+                          <button onClick={() => handleCancelReservation(reservation.id)} disabled={cancelingReservationId === reservation.id} style={{ border: "none", background: "#fee2e2", color: "#b91c1c", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                            {cancelingReservationId === reservation.id ? "Cancelando…" : "Cancelar"}
+                          </button>
+                        ) : null}
+                        {statusMeta.canRebook ? (
+                          <button onClick={() => handleRebookReservation(reservation)} style={{ border: "none", background: "#e0f2fe", color: "#0369a1", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                            Reprogramar reserva
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+                {recentReservations.slice(0, 2).map((reservation) => {
+                  const statusMeta = getReservationStatusMeta(reservation);
+                  return (
+                    <div key={`history-${reservation.id}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 700, color: "#0f172a", fontSize: 13 }}>{reservation.restaurantName}</p>
+                          <p style={{ margin: "2px 0 0", color: "#475569", fontSize: 12 }}>{formatReservationDateTime(getReservationStartTime(reservation))}</p>
+                        </div>
+                        <span style={{ fontSize: 12, color: statusMeta.tone, fontWeight: 700 }}>{statusMeta.label}</span>
+                      </div>
+                      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.4 }}>{statusMeta.message}</p>
+                      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 11 }}>
+                        {reservation.createdAt ? `Creada el ${formatReservationDateTime(reservation.createdAt)}` : "Reserva registrada en tu cuenta"}
+                      </p>
+                      {reservation.cancellationReason ? (
+                        <p style={{ margin: "4px 0 0", color: "#b45309", fontSize: 11 }}>Motivo: {reservation.cancellationReason}</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, marginTop: 12, marginBottom: 0 }}>
-            Cancela gratis hasta 2 horas antes
+            Cancela gratis hasta 2 horas antes y revisa el estado de tus reservas desde aquí.
           </p>
           {profileError ? <p style={{ color: "#dc2626", fontSize: 13, marginTop: 10, marginBottom: 0 }}>{profileError}</p> : null}
         </div>

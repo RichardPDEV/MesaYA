@@ -3,6 +3,7 @@ package com.example.reservas.service;
 import com.example.reservas.domain.*;
 import com.example.reservas.dto.CreateReservationRequest;
 import com.example.reservas.dto.ReservationResponse;
+import com.example.reservas.dto.RescheduleReservationRequest;
 import com.example.reservas.repo.CancellationPolicyRepository;
 import com.example.reservas.repo.ReservationRepository;
 import com.example.reservas.repo.ResourceRepository;
@@ -139,6 +140,50 @@ public class ReservationService {
         return toResponse(saved, resourceId);
     }
 
+    @Transactional
+    public ReservationResponse reschedule(Long id, RescheduleReservationRequest req, OffsetDateTime now, String currentUsername) {
+        Reservation r = getEntityForCurrentUser(id, currentUsername);
+
+        if (req.startTime().isAfter(req.endTime()) || req.startTime().isEqual(req.endTime())) {
+            throw new ValidationException("startTime debe ser < endTime");
+        }
+
+        if (req.startTime().isBefore(now)) {
+            throw new ValidationException("No se puede reprogramar una reserva en el pasado");
+        }
+
+        Resource resource = resourceRepo.findById(req.resourceId())
+                .orElseThrow(() -> new NotFoundException("Resource %d no existe".formatted(req.resourceId())));
+
+        List<Reservation> overlaps = reservationRepo.findOverlaps(resource.getId(), req.tableId(), req.startTime(), req.endTime());
+        overlaps.removeIf(existing -> existing.getId().equals(r.getId()));
+        if (!overlaps.isEmpty()) {
+            throw new ValidationException("Ya existe una reserva que solapa ese horario");
+        }
+
+        r.setResource(resource);
+        r.setTableId(req.tableId());
+        r.setStartTime(req.startTime());
+        r.setEndTime(req.endTime());
+        r.setStatus(ReservationStatus.CONFIRMED);
+        r.setCancellationReason(null);
+
+        Reservation saved = reservationRepo.saveAndFlush(r);
+        Long resourceId = saved.getResource().getId();
+
+        var cache = cacheManager.getCache("availability");
+        if (cache != null) {
+            LocalDate startDay = dayDate(saved.getStartTime());
+            LocalDate endDay = dayDate(saved.getEndTime());
+            cache.evict(CacheKeys.availKey(resourceId, startDay));
+            if (!startDay.equals(endDay)) {
+                cache.evict(CacheKeys.availKey(resourceId, endDay));
+            }
+        }
+
+        return toResponse(saved, resourceId);
+    }
+
     /**
      * Clasificación FREE vs LATE según política y tiempo actual.
      */
@@ -234,6 +279,11 @@ public class ReservationService {
     }
 
     private ReservationResponse toResponse(Reservation saved, Long resourceId) {
+        String restaurantName = null;
+        String tableLabel = saved.getTableId();
+        if (saved.getResource() != null && saved.getResource().getBusiness() != null) {
+            restaurantName = saved.getResource().getBusiness().getName();
+        }
         return new ReservationResponse(
                 saved.getId(),
                 resourceId,
@@ -244,7 +294,11 @@ public class ReservationService {
                 saved.getPartySize(),
                 saved.getStartTime(),
                 saved.getEndTime(),
-                saved.getStatus().name()
+                saved.getStatus().name(),
+                restaurantName,
+                tableLabel,
+                saved.getCancellationReason(),
+                saved.getCreatedAt()
         );
     }
 }

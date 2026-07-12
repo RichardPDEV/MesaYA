@@ -5,6 +5,7 @@ import com.example.reservas.dto.CreateReservationRequest;
 import com.example.reservas.dto.ReservationResponse;
 import com.example.reservas.service.ReservationService;
 import com.example.reservas.dto.CancelReservationRequest;
+import com.example.reservas.dto.RescheduleReservationRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -43,8 +44,20 @@ public class ReservationController {
     public ReservationResponse get(@PathVariable Long id, Authentication authentication) {
         Reservation r = reservationService.getEntityForCurrentUser(id, authentication != null ? authentication.getName() : null);
         return new ReservationResponse(
-            r.getId(), r.getResource().getId(), r.getTableId(), r.getUser() != null ? r.getUser().getId() : null, r.getCustomerName(), r.getCustomerEmail(),
-            r.getPartySize(), r.getStartTime(), r.getEndTime(), r.getStatus().name()
+            r.getId(),
+            r.getResource().getId(),
+            r.getTableId(),
+            r.getUser() != null ? r.getUser().getId() : null,
+            r.getCustomerName(),
+            r.getCustomerEmail(),
+            r.getPartySize(),
+            r.getStartTime(),
+            r.getEndTime(),
+            r.getStatus().name(),
+            r.getResource() != null && r.getResource().getBusiness() != null ? r.getResource().getBusiness().getName() : null,
+            r.getTableId(),
+            r.getCancellationReason(),
+            r.getCreatedAt()
         );
     }
 
@@ -64,8 +77,20 @@ public class ReservationController {
 
         return new PageImpl<>(
             page.getContent().stream().map(r -> new ReservationResponse(
-                r.getId(), r.getResource().getId(), r.getTableId(), r.getUser() != null ? r.getUser().getId() : null, r.getCustomerName(), r.getCustomerEmail(),
-                r.getPartySize(), r.getStartTime(), r.getEndTime(), r.getStatus().name()
+                r.getId(),
+                r.getResource().getId(),
+                r.getTableId(),
+                r.getUser() != null ? r.getUser().getId() : null,
+                r.getCustomerName(),
+                r.getCustomerEmail(),
+                r.getPartySize(),
+                r.getStartTime(),
+                r.getEndTime(),
+                r.getStatus().name(),
+                r.getResource() != null && r.getResource().getBusiness() != null ? r.getResource().getBusiness().getName() : null,
+                r.getTableId(),
+                r.getCancellationReason(),
+                r.getCreatedAt()
             )).toList(),
             page.getPageable(), page.getTotalElements()
         );
@@ -76,5 +101,16 @@ public class ReservationController {
     public ReservationResponse cancel(@PathVariable Long id, @Valid @RequestBody CancelReservationRequest req, Authentication authentication) {
         var resp = reservationService.cancel(id, req.reason(), OffsetDateTime.now(ZoneOffset.UTC), authentication != null ? authentication.getName() : null);
         return resp;
+    }
+
+    @PatchMapping("/{id}/reschedule")
+    @Operation(summary = "Reprogramar reserva")
+    public ReservationResponse reschedule(@PathVariable Long id, @Valid @RequestBody RescheduleReservationRequest req, Authentication authentication) {
+        return reservationService.reschedule(
+                id,
+                req,
+                OffsetDateTime.now(ZoneOffset.UTC),
+                authentication != null ? authentication.getName() : null
+        );
     }
 }

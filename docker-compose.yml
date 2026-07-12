@@ -8,6 +8,14 @@ services:
     ports: ["8096:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reservas -d reservas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   api:
     build: .
     env_file: .env
@@ -17,16 +25,24 @@ services:
       - DB_PASSWORD=reservas
       - APP_JWT_SECRET=dev-secret-key-1234567890-abcdef
       - APP_COOKIE_SECURE=false
+      - APP_COOKIE_SAMESITE=Lax
       - SPRING_PROFILES_ACTIVE=prod
-    depends_on: [postgres]
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports: ["8095:8080"]
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
       args:
         - VITE_API_BASE_URL=/api
-    depends_on: [api]
+    depends_on:
+      api:
+        condition: service_started
     ports: ["8089:80"]
+    restart: unless-stopped
 
 volumes:
   pgdata:

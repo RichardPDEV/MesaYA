@@ -13,6 +13,9 @@ public class CorsConfig implements WebMvcConfigurer {
     @Value("${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173}")
     private String allowedOrigins;
 
+    @Value("${APP_CORS_ALLOW_CREDENTIALS:true}")
+    private boolean allowCredentials;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         String[] origins = Arrays.stream(allowedOrigins.split(","))
@@ -24,7 +27,7 @@ public class CorsConfig implements WebMvcConfigurer {
                 .allowedOriginPatterns(origins)
                 .allowedMethods("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("Authorization", "Content-Type", "Accept")
-                .allowCredentials(true)
+                .allowCredentials(allowCredentials)
                 .maxAge(3600);
     }
 }
