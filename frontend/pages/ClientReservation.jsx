@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW } from "../lib/constants.js";
-import { requestJson } from "../lib/api.js";
+import { getAccessToken, requestJson } from "../lib/api.js";
 import FloorPlan from "../components/FloorPlan.jsx";
 import { Label, inputStyle } from "../components/FormFields.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -388,19 +388,39 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     }, 10000);
 
     let eventSource = null;
-    if (resourceId) {
+    let reconnectTimer = null;
+    const connectStream = () => {
+      if (!resourceId || typeof window === "undefined") return;
+      const token = getAccessToken();
+      const streamUrl = token
+        ? `${API_BASE_URL}/api/resources/${resourceId}/events?token=${encodeURIComponent(token)}`
+        : `${API_BASE_URL}/api/resources/${resourceId}/events`;
       try {
-        eventSource = new EventSource(`${API_BASE_URL}/api/resources/${resourceId}/events`);
+        eventSource = new EventSource(streamUrl);
         eventSource.addEventListener("reservation-change", () => {
           loadAvailability();
         });
         eventSource.onerror = () => {
-          eventSource.close();
+          if (eventSource) {
+            eventSource.close();
+          }
           eventSource = null;
+          if (reconnectTimer) {
+            window.clearTimeout(reconnectTimer);
+          }
+          reconnectTimer = window.setTimeout(connectStream, 4000);
         };
       } catch {
         eventSource = null;
+        if (reconnectTimer) {
+          window.clearTimeout(reconnectTimer);
+        }
+        reconnectTimer = window.setTimeout(connectStream, 4000);
       }
+    };
+
+    if (resourceId) {
+      connectStream();
     }
 
     const handleVisibility = () => {
@@ -412,6 +432,9 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.clearInterval(intervalId);
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
       if (eventSource) {
         eventSource.close();
       }

@@ -23,20 +23,26 @@ public class JwtFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String auth = request.getHeader("Authorization");
+        String tokenParam = request.getParameter("token");
+        String token = null;
+
         if (auth != null && auth.startsWith("Bearer ")) {
-            String token = auth.substring(7);
-            if (jwtUtil.validate(token)) {
-                String username = jwtUtil.extractUsername(token);
-                String role = jwtUtil.extractRole(token);
-                java.util.List<org.springframework.security.core.GrantedAuthority> authorities = java.util.List.of();
-                if (role != null && !role.isBlank()) {
-                    authorities = java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role));
-                }
-                UserDetails ud = User.withUsername(username).password("").authorities(authorities).build();
-                var authToken = new UsernamePasswordAuthenticationToken(ud, null, ud.getAuthorities());
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            token = auth.substring(7);
+        } else if (tokenParam != null && !tokenParam.isBlank()) {
+            token = tokenParam;
+        }
+
+        if (token != null && jwtUtil.validate(token)) {
+            String username = jwtUtil.extractUsername(token);
+            String role = jwtUtil.extractRole(token);
+            java.util.List<org.springframework.security.core.GrantedAuthority> authorities = java.util.List.of();
+            if (role != null && !role.isBlank()) {
+                authorities = java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role));
             }
+            UserDetails ud = User.withUsername(username).password("").authorities(authorities).build();
+            var authToken = new UsernamePasswordAuthenticationToken(ud, null, ud.getAuthorities());
+            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            SecurityContextHolder.getContext().setAuthentication(authToken);
         }
         filterChain.doFilter(request, response);
     }

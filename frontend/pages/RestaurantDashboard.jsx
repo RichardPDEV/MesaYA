@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW, TABLE_COLORS } from "../lib/constants.js";
 import { readSaveQueue, enqueueSaveItem, removeSaveItemAt } from "../lib/storage.js";
-import { requestJson } from "../lib/api.js";
+import { getAccessToken, requestJson } from "../lib/api.js";
 import { persistRestaurantProfile } from "../lib/restaurantBackend.js";
 import { createLayoutElement, normalizeRestaurantLayout, sameRestaurantId } from "../lib/layout.js";
 import { buildTableOccupancy, summarizeOccupancy } from "../lib/occupancy.js";
@@ -620,22 +620,45 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     const intervalId = window.setInterval(refreshReservations, 10000);
 
     let eventSource = null;
-    try {
-      eventSource = new EventSource(`${API_BASE_URL}/api/resources/${resourceId}/events`);
-      eventSource.addEventListener("reservation-change", () => {
-        refreshReservations();
-      });
-      eventSource.onerror = () => {
-        eventSource.close();
+    let reconnectTimer = null;
+    const connectStream = () => {
+      if (!resourceId || typeof window === "undefined") return;
+      const token = getAccessToken();
+      const streamUrl = token
+        ? `${API_BASE_URL}/api/resources/${resourceId}/events?token=${encodeURIComponent(token)}`
+        : `${API_BASE_URL}/api/resources/${resourceId}/events`;
+      try {
+        eventSource = new EventSource(streamUrl);
+        eventSource.addEventListener("reservation-change", () => {
+          refreshReservations();
+        });
+        eventSource.onerror = () => {
+          if (eventSource) {
+            eventSource.close();
+          }
+          eventSource = null;
+          if (reconnectTimer) {
+            window.clearTimeout(reconnectTimer);
+          }
+          reconnectTimer = window.setTimeout(connectStream, 4000);
+        };
+      } catch {
         eventSource = null;
-      };
-    } catch {
-      eventSource = null;
-    }
+        if (reconnectTimer) {
+          window.clearTimeout(reconnectTimer);
+        }
+        reconnectTimer = window.setTimeout(connectStream, 4000);
+      }
+    };
+
+    connectStream();
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
       if (eventSource) {
         eventSource.close();
       }
