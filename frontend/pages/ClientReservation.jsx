@@ -5,6 +5,7 @@ import FloorPlan from "../components/FloorPlan.jsx";
 import { Label, inputStyle } from "../components/FormFields.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getReservationStartTime, getReservationStatusMeta, isUpcomingReservation } from "../lib/reservationUtils.js";
+import { buildTableOccupancy } from "../lib/occupancy.js";
 
 const parseTimeToMinutes = (time) => {
   const [hours, minutes] = (time || "00:00").split(":").map(Number);
@@ -163,33 +164,12 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const buildAvailability = (tables, reservations) => {
     const { start, end } = buildReservationWindow(date, time, endTime);
     const now = new Date();
-    const reservationStateByTable = new Map();
-
-    (reservations || []).forEach((res) => {
-      if (!res?.tableId) return;
+    const relevantReservations = (reservations || []).filter((res) => {
       const reservationStart = res?.startTime ? new Date(res.startTime) : null;
       const reservationEnd = res?.endTime ? new Date(res.endTime) : null;
-      if (!reservationStart || !reservationEnd || !hasTimeOverlap(reservationStart, reservationEnd, start, end)) {
-        return;
-      }
-
-      const isActive = reservationStart <= now && reservationEnd >= now;
-      const resolvedState = isActive ? "occupied" : "reserved";
-      const previous = reservationStateByTable.get(res.tableId);
-      if (!previous || (resolvedState === "occupied" && previous !== "occupied")) {
-        reservationStateByTable.set(res.tableId, resolvedState);
-      }
+      return reservationStart && reservationEnd && hasTimeOverlap(reservationStart, reservationEnd, start, end);
     });
-
-    return (tables || []).map((table) => {
-      const seatsFit = Number(table.seats || 0) >= Math.max(1, Number(guests || 1));
-      const tableState = reservationStateByTable.get(table.id);
-      const status = tableState ? (seatsFit ? tableState : "occupied") : seatsFit ? "available" : "occupied";
-      return {
-        ...table,
-        status,
-      };
-    });
+    return buildTableOccupancy(tables, relevantReservations, { now, guests: Math.max(1, Number(guests || 1)) });
   };
 
   const evaluateRequestedInterval = (windows, startTime, endTime) => {
@@ -400,10 +380,28 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   useEffect(() => {
     if (!restaurant) return;
 
+    const resourceId = restaurant?.backendResourceId || restaurant?.resourceId;
     loadAvailability();
+
     const intervalId = window.setInterval(() => {
       loadAvailability();
     }, 10000);
+
+    let eventSource = null;
+    if (resourceId) {
+      try {
+        eventSource = new EventSource(`${API_BASE_URL}/api/resources/${resourceId}/events`);
+        eventSource.addEventListener("reservation-change", () => {
+          loadAvailability();
+        });
+        eventSource.onerror = () => {
+          eventSource.close();
+          eventSource = null;
+        };
+      } catch {
+        eventSource = null;
+      }
+    }
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -414,6 +412,9 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.clearInterval(intervalId);
+      if (eventSource) {
+        eventSource.close();
+      }
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadAvailability, restaurant]);

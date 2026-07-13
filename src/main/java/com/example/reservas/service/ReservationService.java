@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class ReservationService {
@@ -28,17 +29,20 @@ public class ReservationService {
     private final CancellationPolicyRepository cancellationPolicyRepo;
     private final CacheManager cacheManager;
     private final UserService userService;
+    private final ReservationSseBroadcaster sseBroadcaster;
 
     public ReservationService(ReservationRepository reservationRepo,
                               ResourceRepository resourceRepo,
                               CancellationPolicyRepository cancellationPolicyRepo,
                               CacheManager cacheManager,
-                              UserService userService) {
+                              UserService userService,
+                              ReservationSseBroadcaster sseBroadcaster) {
         this.reservationRepo = reservationRepo;
         this.resourceRepo = resourceRepo;
         this.cancellationPolicyRepo = cancellationPolicyRepo;
         this.cacheManager = cacheManager;
         this.userService = userService;
+        this.sseBroadcaster = sseBroadcaster;
     }
 
     /**
@@ -99,6 +103,12 @@ public class ReservationService {
         Reservation saved = reservationRepo.saveAndFlush(r);
         // Acceder al resource dentro de la transacción para evitar LazyInitializationException
         Long resourceId = saved.getResource().getId();
+        sseBroadcaster.emitReservationChanged(resourceId, Map.of(
+                "resourceId", resourceId,
+                "kind", "reservation-updated",
+                "reservationId", saved.getId(),
+                "status", saved.getStatus().name()
+        ));
         return toResponse(saved, resourceId);
     }
 
@@ -122,9 +132,15 @@ public class ReservationService {
         r.setCancellationReason(reason);
 
         Reservation saved = reservationRepo.saveAndFlush(r);
-        
+
         // Acceder al resource dentro de la transacción para evitar LazyInitializationException
         Long resourceId = saved.getResource().getId();
+        sseBroadcaster.emitReservationChanged(resourceId, Map.of(
+                "resourceId", resourceId,
+                "kind", "reservation-updated",
+                "reservationId", saved.getId(),
+                "status", saved.getStatus().name()
+        ));
 
         // Evict availability cache para el día de inicio y (si aplica) el de fin, normalizados a UTC
         var cache = cacheManager.getCache("availability");
@@ -170,6 +186,12 @@ public class ReservationService {
 
         Reservation saved = reservationRepo.saveAndFlush(r);
         Long resourceId = saved.getResource().getId();
+        sseBroadcaster.emitReservationChanged(resourceId, Map.of(
+                "resourceId", resourceId,
+                "kind", "reservation-updated",
+                "reservationId", saved.getId(),
+                "status", saved.getStatus().name()
+        ));
 
         var cache = cacheManager.getCache("availability");
         if (cache != null) {

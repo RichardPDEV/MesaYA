@@ -4,6 +4,7 @@ import { readSaveQueue, enqueueSaveItem, removeSaveItemAt } from "../lib/storage
 import { requestJson } from "../lib/api.js";
 import { persistRestaurantProfile } from "../lib/restaurantBackend.js";
 import { createLayoutElement, normalizeRestaurantLayout, sameRestaurantId } from "../lib/layout.js";
+import { buildTableOccupancy, summarizeOccupancy } from "../lib/occupancy.js";
 import { readRegisteredRestaurants } from "../lib/storage.js";
 import Badge from "../components/Badge.jsx";
 import FloorPlan from "../components/FloorPlan.jsx";
@@ -58,7 +59,12 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
   const [activeFloor, setActiveFloor] = useState(1);
   const [activeElementType, setActiveElementType] = useState(null);
   const [showOnlyTables, setShowOnlyTables] = useState(false);
-  const [legendFilter, setLegendFilter] = useState(null);
+  const [legendFilter, setLegendFilter] = useState("all");
+  const [floorFilter, setFloorFilter] = useState("all");
+  const [capacityFilter, setCapacityFilter] = useState("all");
+  const [previewMode, setPreviewMode] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [floorPlanZoom, setFloorPlanZoom] = useState(1);
   const [floorCount, setFloorCount] = useState(1);
   const [floorNames, setFloorNames] = useState({ 1: "Piso principal" });
   const [selectedLayoutElementId, setSelectedLayoutElementId] = useState(null);
@@ -96,6 +102,7 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
   const [saveStatus, setSaveStatus] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [pendingSaves, setPendingSaves] = useState(() => readSaveQueue().length);
+  const lastSavedSignatureRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -142,6 +149,17 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
         description: saved.description || activeRest.description,
       };
       onSaveRestaurant(updated);
+      lastSavedSignatureRef.current = JSON.stringify({
+        id: updated.id,
+        name: updated.name,
+        address: updated.address,
+        description: updated.description,
+        tables: updated.tables || [],
+        layoutElements: updated.layoutElements || [],
+        reservations: updated.reservations || [],
+        floorCount,
+        floorNames,
+      });
       setSaveStatus("Plano guardado en tu perfil");
     } catch (error) {
       console.error("No se pudo guardar el perfil en el backend:", error);
@@ -160,6 +178,17 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
           description: saved2.description || activeRest.description,
         };
         onSaveRestaurant(updated2);
+        lastSavedSignatureRef.current = JSON.stringify({
+          id: updated2.id,
+          name: updated2.name,
+          address: updated2.address,
+          description: updated2.description,
+          tables: updated2.tables || [],
+          layoutElements: updated2.layoutElements || [],
+          reservations: updated2.reservations || [],
+          floorCount,
+          floorNames,
+        });
         setSaveStatus("Plano guardado en tu perfil (reintento exitoso)");
       } catch (err2) {
         // Final fallback: keep local, enqueue save for background retry, and show detailed message
@@ -178,6 +207,31 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     setTimeout(() => setSaveStatus(""), 2500);
   };
 
+  useEffect(() => {
+    if (!activeRest || !autoSaveEnabled) return;
+
+    const signature = JSON.stringify({
+      id: activeRest.id,
+      name: activeRest.name,
+      address: activeRest.address,
+      description: activeRest.description,
+      tables: activeRest.tables || [],
+      layoutElements: activeRest.layoutElements || [],
+      reservations: activeRest.reservations || [],
+      floorCount,
+      floorNames,
+    });
+
+    if (lastSavedSignatureRef.current === signature) return;
+
+    const timer = window.setTimeout(() => {
+      lastSavedSignatureRef.current = signature;
+      saveRestaurantProfile();
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [activeRest?.id, activeRest?.name, activeRest?.address, activeRest?.description, activeRest?.tables, activeRest?.layoutElements, activeRest?.reservations, autoSaveEnabled, floorCount, floorNames]);
+
   const syncRest = useCallback((updated) => {
     setRestList(prev => prev.map(r => r.id === updated.id ? updated : r));
     setActiveRest(updated);
@@ -185,6 +239,11 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
   const updateTableStatus = (tableId, status) => {
     const updated = { ...activeRest, tables: (activeRest.tables || []).map(t => t.id === tableId ? { ...t, status } : t) };
+    syncRest(updated);
+  };
+
+  const updateTableNotes = (tableId, notes) => {
+    const updated = { ...activeRest, tables: (activeRest.tables || []).map(t => t.id === tableId ? { ...t, notes } : t) };
     syncRest(updated);
   };
 
@@ -203,16 +262,16 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     const currentTables = activeRest?.tables || [];
     const ids = currentTables.map(t => parseInt(t.id.replace("T", ""))).filter(Boolean).sort((a, b) => b - a);
     const nextId = `T${(ids[0] || 0) + 1}`;
-    const newTable = { id: nextId, label: nextId, x: 120 + Math.random() * 260, y: 100 + Math.random() * 160, seats: newTableSeats, status: "available", floor: activeFloor };
+    const newTable = { id: nextId, label: nextId, x: 120 + Math.random() * 260, y: 100 + Math.random() * 160, seats: newTableSeats, status: "available", floor: activeFloor, notes: "" };
     const updated = { ...activeRest, tables: [...currentTables, newTable] };
     syncRest(updated);
     setActiveRest(updated);
     setShowAddTable(false);
   };
 
-  const addLayoutElement = (type, x, y) => {
+  const addLayoutElement = (type, x, y, extraProps = {}) => {
     if (!activeRest) return;
-    const updated = { ...activeRest, layoutElements: [...(activeRest.layoutElements || []), createLayoutElement(type, x, y, activeFloor)] };
+    const updated = { ...activeRest, layoutElements: [...(activeRest.layoutElements || []), createLayoutElement(type, x, y, activeFloor, null, extraProps)] };
     syncRest(updated);
     setActiveRest(updated);
   };
@@ -230,8 +289,14 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
   const updateLayoutElementLabel = (elementId, value) => {
     if (!activeRest) return;
-    const nextValue = value;
-    const updated = { ...activeRest, layoutElements: (activeRest.layoutElements || []).map((element) => element.id === elementId ? { ...element, label: nextValue } : element) };
+    const updated = { ...activeRest, layoutElements: (activeRest.layoutElements || []).map((element) => element.id === elementId ? { ...element, label: value } : element) };
+    syncRest(updated);
+    setActiveRest(updated);
+  };
+
+  const updateLayoutElementSubtype = (elementId, subtype) => {
+    if (!activeRest) return;
+    const updated = { ...activeRest, layoutElements: (activeRest.layoutElements || []).map((element) => element.id === elementId ? { ...element, subtype } : element) };
     syncRest(updated);
     setActiveRest(updated);
   };
@@ -247,6 +312,39 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     setActiveFloor(nextFloor);
     setActiveElementType(null);
     setSelectedTableId(null);
+  };
+
+  const duplicateFloorPlan = (floorToDuplicate) => {
+    if (!activeRest) return;
+    const nextFloor = floorCount + 1;
+    const sourceName = floorNames[floorToDuplicate] || `Piso ${floorToDuplicate}`;
+    const response = window.prompt("Nombre del piso duplicado", `${sourceName} (copia)`);
+    if (response === null) return;
+    const name = response.trim() || `${sourceName} (copia)`;
+
+    const clonedTables = (activeRest.tables || [])
+      .filter((table) => (table.floor || 1) === floorToDuplicate)
+      .map((table) => ({ ...table, id: `${table.id}-copy-${nextFloor}`, floor: nextFloor, x: Math.min(500, (table.x || 120) + 32), y: Math.min(320, (table.y || 120) + 32), notes: table.notes || "" }));
+
+    const clonedElements = (activeRest.layoutElements || [])
+      .filter((element) => {
+        if (element.type === "floor") return (element.level || 1) === floorToDuplicate;
+        return (element.floor || 1) === floorToDuplicate;
+      })
+      .map((element) => ({ ...element, id: `${element.id}-copy-${nextFloor}`, floor: nextFloor, level: nextFloor, x: Math.min(500, (element.x || 120) + 24), y: Math.min(320, (element.y || 120) + 24) }));
+
+    const updated = {
+      ...activeRest,
+      tables: [...(activeRest.tables || []), ...clonedTables],
+      layoutElements: [...(activeRest.layoutElements || []), ...clonedElements],
+    };
+
+    syncRest(updated);
+    setFloorCount(nextFloor);
+    setFloorNames((prev) => ({ ...prev, [nextFloor]: name }));
+    setActiveFloor(nextFloor);
+    setSelectedTableId(null);
+    setSelectedLayoutElementId(null);
   };
 
   const removeFloorPlan = (floorToRemove) => {
@@ -420,7 +518,16 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     addLayoutElement(activeElementType, x, y);
   };
 
-  const visibleTables = (activeRest?.tables || []).filter((table) => (table.floor || 1) === activeFloor);
+  const filteredTables = (activeRest?.tables || []).filter((table) => {
+    const floorMatch = floorFilter === "all" || Number(table.floor || 1) === Number(floorFilter);
+    const statusMatch = legendFilter === "all" || !legendFilter || table.status === legendFilter;
+    const capacityMatch = capacityFilter === "all"
+      || (capacityFilter === "small" && Number(table.seats) <= 2)
+      || (capacityFilter === "medium" && Number(table.seats) <= 4)
+      || (capacityFilter === "large" && Number(table.seats) >= 6);
+    return floorMatch && statusMatch && capacityMatch;
+  });
+  const visibleTables = filteredTables.filter((table) => (table.floor || 1) === activeFloor);
   const visibleLayoutElements = (activeRest?.layoutElements || []).filter((element) => {
     if (element.type === "floor") return (element.level || 1) === activeFloor;
     return (element.floor || 1) === activeFloor;
@@ -442,6 +549,7 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
     available: (activeRest?.tables || []).filter(t => t.status === "available").length,
     occupied: (activeRest?.tables || []).filter(t => t.status === "occupied").length,
     reserved: (activeRest?.tables || []).filter(t => t.status === "reserved").length,
+    people: (activeRest?.tables || []).reduce((sum, table) => sum + Number(table.seats || 0), 0),
   };
 
   if (!activeRest) {
@@ -498,27 +606,7 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
         if (cancelled) return;
 
         const now = new Date();
-        const stateByTable = new Map();
-        (reservations || []).forEach((reservation) => {
-          if (!reservation?.tableId) return;
-          const start = reservation?.startTime ? new Date(reservation.startTime) : null;
-          const end = reservation?.endTime ? new Date(reservation.endTime) : null;
-          if (!start || !end) return;
-          const isActive = start <= now && end >= now;
-          const resolvedState = isActive ? "occupied" : "reserved";
-          const previous = stateByTable.get(reservation.tableId);
-          if (!previous || (resolvedState === "occupied" && previous !== "occupied")) {
-            stateByTable.set(reservation.tableId, resolvedState);
-          }
-        });
-
-        const nextTables = (activeRest.tables || []).map((table) => {
-          const resolvedState = stateByTable.get(table.id);
-          if (resolvedState) {
-            return { ...table, status: resolvedState };
-          }
-          return table.status === "occupied" || table.status === "reserved" ? table : { ...table, status: "available" };
-        });
+        const nextTables = buildTableOccupancy(activeRest.tables || [], reservations || [], { now, guests: 1 });
 
         const nextRest = { ...activeRest, tables: nextTables, reservations: reservations || [] };
         syncRest(nextRest);
@@ -530,15 +618,35 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
     refreshReservations();
     const intervalId = window.setInterval(refreshReservations, 10000);
+
+    let eventSource = null;
+    try {
+      eventSource = new EventSource(`${API_BASE_URL}/api/resources/${resourceId}/events`);
+      eventSource.addEventListener("reservation-change", () => {
+        refreshReservations();
+      });
+      eventSource.onerror = () => {
+        eventSource.close();
+        eventSource = null;
+      };
+    } catch {
+      eventSource = null;
+    }
+
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, [activeRest?.id, activeRest?.backendResourceId, activeRest?.resourceId, syncRest, today]);
   const getFloorLabel = (floorValue) => {
     const floorNumber = Number(floorValue) || 1;
     return floorNames[floorNumber] || (floorNumber === 1 ? "Piso principal" : `Piso ${floorNumber}`);
   };
+
+  const occupancySummary = summarizeOccupancy(restaurantTables);
 
   const overviewItems = [
     ...restaurantElements.filter((element) => element.type === "door").map((element) => ({
@@ -679,9 +787,21 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                     >
                       {showOnlyTables ? "Ver completo" : "Ver solo mesas"}
                     </button>
+                    <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 999, padding: "8px 12px", fontSize: 13, background: "white" }}>
+                      <option value="all">Todos los pisos</option>
+                      {Array.from({ length: floorCount }, (_, index) => index + 1).map((floorNumber) => (
+                        <option key={floorNumber} value={floorNumber}>{getFloorLabel(floorNumber)}</option>
+                      ))}
+                    </select>
+                    <select value={capacityFilter} onChange={(e) => setCapacityFilter(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 999, padding: "8px 12px", fontSize: 13, background: "white" }}>
+                      <option value="all">Todas las capacidades</option>
+                      <option value="small">Hasta 2 personas</option>
+                      <option value="medium">Hasta 4 personas</option>
+                      <option value="large">6+ personas</option>
+                    </select>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       {[
-                        { key: null, label: "Todo", color: "#94a3b8" },
+                        { key: "all", label: "Todo", color: "#94a3b8" },
                         { key: "available", label: "Disponibles", color: "#16a34a" },
                         { key: "occupied", label: "Ocupadas", color: "#dc2626" },
                         { key: "reserved", label: "Reservadas", color: "#ca8a04" },
@@ -721,11 +841,12 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 18, alignItems: "start" }}>
                   {Array.from({ length: floorCount }, (_, index) => index + 1).map((floorNumber) => {
-                    const floorTables = (activeRest?.tables || []).filter((table) => (table.floor || 1) === floorNumber);
+                    const floorTables = filteredTables.filter((table) => (table.floor || 1) === floorNumber);
                     const floorStats = {
                       available: floorTables.filter((table) => table.status === "available").length,
                       occupied: floorTables.filter((table) => table.status === "occupied").length,
                       reserved: floorTables.filter((table) => table.status === "reserved").length,
+                      people: floorTables.reduce((sum, table) => sum + Number(table.seats || 0), 0),
                     };
 
                     return (
@@ -733,7 +854,7 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                           <div>
                             <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{getFloorLabel(floorNumber)}</p>
-                            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{floorTables.length} mesas · {floorTables.length ? `${floorStats.available} libres` : "sin mesas"}</p>
+                            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{floorTables.length} mesas · {floorStats.people} personas · {floorTables.length ? `${floorStats.available} libres` : "sin mesas"}</p>
                           </div>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 999, padding: "4px 8px", fontSize: 11, fontWeight: 700 }}>✓ {floorStats.available}</span>
@@ -760,14 +881,14 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
 
               <div style={{ marginTop: 20 }}>
                 <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>Control de mesas</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                  {activeTables.map(table => (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+                  {filteredTables.map(table => (
                     <div key={table.id} style={{ background: "white", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "14px 16px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                         <span style={{ fontWeight: 700, color: "#0f172a" }}>{table.label}</span>
                         <Badge status={table.status} />
                       </div>
-                      <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 13 }}>{table.seats} personas</p>
+                      <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 13 }}>{table.seats} personas · {table.status === "available" ? "Libre" : table.status === "occupied" ? "Ocupada" : "Reservada"}</p>
                       <div style={{ marginBottom: 8 }}>
                         <button
                           onClick={() => { setActiveFloor(table.floor || 1); setSelectedTableId(table.id); }}
@@ -796,7 +917,19 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                   <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0f172a" }}>Editor del plano</h2>
                   <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 14 }}>Arrastra las mesas para reorganizarlas. Cambia su estado con los controles.</p>
                 </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <button onClick={() => setPreviewMode((value) => !value)} style={{ background: previewMode ? "#0f172a" : "white", color: previewMode ? "white" : "#0f172a", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    {previewMode ? "Cerrar vista previa" : "Vista previa cliente"}
+                  </button>
+                  <button onClick={() => setAutoSaveEnabled((value) => !value)} style={{ background: autoSaveEnabled ? "#fef3c7" : "#e2e8f0", color: autoSaveEnabled ? "#92400e" : "#334155", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    {autoSaveEnabled ? "Auto-guardado ON" : "Auto-guardado OFF"}
+                  </button>
+                  <button onClick={() => setFloorPlanZoom((value) => Math.max(0.8, Math.min(1.7, value + 0.1)))} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    + Zoom
+                  </button>
+                  <button onClick={() => setFloorPlanZoom(1)} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    Ajustar
+                  </button>
                   <button onClick={() => setShowAddTable(true)}
                     style={{ background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "12px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                     + Añadir mesa
@@ -850,9 +983,14 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                       {floorNames[floor] || (floor === 1 ? "Piso principal" : `Piso ${floor}`)}
                     </button>
                     {floor > 1 && (
-                      <button onClick={() => removeFloorPlan(floor)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, cursor: "pointer" }} title="Eliminar piso">
-                        ×
-                      </button>
+                      <>
+                        <button onClick={() => duplicateFloorPlan(floor)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, cursor: "pointer" }} title="Duplicar piso">
+                          ⧉
+                        </button>
+                        <button onClick={() => removeFloorPlan(floor)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, cursor: "pointer" }} title="Eliminar piso">
+                          ×
+                        </button>
+                      </>
                     )}
                   </div>
                 ))}
@@ -864,6 +1002,7 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                   { key: "door", label: "Puerta" },
                   { key: "window", label: "Ventana" },
                   { key: "stairs", label: "Escaleras" },
+                  { key: "zone", label: "Zona" },
                   { key: "floor", label: "Crear piso" },
                 ].map(item => (
                   <button key={item.key} onClick={() => {
@@ -879,8 +1018,33 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                 <span style={{ fontSize: 13, color: "#64748b" }}>Haz clic en el plano para colocar el elemento seleccionado.</span>
               </div>
 
+              {previewMode && (
+                <div style={{ background: "white", border: "1.5px solid #e2e8f0", borderRadius: 16, padding: "16px 18px", marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Vista previa para el cliente</p>
+                      <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>Así se vería el plano con el estado actual de las mesas.</p>
+                    </div>
+                    <span style={{ background: "#eff6ff", color: "#1d4ed8", borderRadius: 999, padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>Modo cliente</span>
+                  </div>
+                  <FloorPlan
+                    tables={activeTables}
+                    onTableClick={null}
+                    editable={false}
+                    layoutElements={activeRest.layoutElements || []}
+                    floor={activeFloor}
+                    showLegend={true}
+                    title={getFloorLabel(activeFloor)}
+                    showOnlyTables={showOnlyTables}
+                    statusFilter={legendFilter}
+                  />
+                </div>
+              )}
+
               {/* Editable SVG floor plan */}
               <div style={{ background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 16, overflow: "hidden" }}>
+                <div style={{ overflow: "auto" }}>
+                  <div style={{ transform: `scale(${floorPlanZoom})`, transformOrigin: "top left", width: `${100 / floorPlanZoom}%`, minWidth: `${100 / floorPlanZoom}%` }}>
                 <svg
                   width="100%"
                   viewBox="0 0 540 360"
@@ -988,42 +1152,72 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                     );
                   })}
                 </svg>
+                  </div>
+                </div>
               </div>
 
               {selectedTable && (
-                <div style={{ marginTop: 18, background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, color: "#0f172a" }}>Mesa {selectedTable.label} seleccionada</p>
-                    <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>Asigna el piso para que el cliente vea mejor la ubicación.</p>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    {floorCount > 1 ? Array.from({ length: floorCount }, (_, index) => index + 1).map(floor => (
-                      <button key={floor} onClick={() => updateTableFloor(selectedTable.id, floor)} style={{ padding: "8px 12px", borderRadius: 10, border: selectedTable.floor === floor ? "2px solid #0f172a" : "1px solid #e2e8f0", background: selectedTable.floor === floor ? "#0f172a" : "white", color: selectedTable.floor === floor ? "white" : "#374151", fontWeight: 600, cursor: "pointer" }}>
-                        {floorNames[floor] || (floor === 1 ? "Piso principal" : `Piso ${floor}`)}
+                <div style={{ marginTop: 18, background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, color: "#0f172a" }}>Mesa {selectedTable.label} seleccionada</p>
+                      <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>Asigna el piso, ajusta la capacidad y deja notas para el turno.</p>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      {floorCount > 1 ? Array.from({ length: floorCount }, (_, index) => index + 1).map(floor => (
+                        <button key={floor} onClick={() => updateTableFloor(selectedTable.id, floor)} style={{ padding: "8px 12px", borderRadius: 10, border: selectedTable.floor === floor ? "2px solid #0f172a" : "1px solid #e2e8f0", background: selectedTable.floor === floor ? "#0f172a" : "white", color: selectedTable.floor === floor ? "white" : "#374151", fontWeight: 600, cursor: "pointer" }}>
+                          {floorNames[floor] || (floor === 1 ? "Piso principal" : `Piso ${floor}`)}
+                        </button>
+                      )) : (
+                        <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>Se usará el piso principal por defecto</span>
+                      )}
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#334155" }}>
+                        Tamaño
+                        <input
+                          type="number"
+                          min="24"
+                          max="64"
+                          step="1"
+                          value={selectedTable.size || 60}
+                          onBlur={(e) => updateTableSize(selectedTable.id, e.target.value)}
+                          onChange={(e) => handleTableSizeInputChange(selectedTable.id, e.target.value)}
+                          style={{ width: 70, border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff" }}
+                        />
+                      </label>
+                      <button
+                        onClick={() => removeTable(selectedTable.id)}
+                        style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        Borrar mesa
                       </button>
-                    )) : (
-                      <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>Se usará el piso principal por defecto</span>
-                    )}
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#334155" }}>
-                      Tamaño
-                      <input
-                        type="number"
-                        min="24"
-                        max="64"
-                        step="1"
-                        value={selectedTable.size || 60}
-                        onBlur={(e) => updateTableSize(selectedTable.id, e.target.value)}
-                        onChange={(e) => handleTableSizeInputChange(selectedTable.id, e.target.value)}
-                        style={{ width: 70, border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff" }}
-                      />
-                    </label>
-                    <button
-                      onClick={() => removeTable(selectedTable.id)}
-                      style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, cursor: "pointer" }}
-                    >
-                      Borrar mesa
-                    </button>
+                    </div>
                   </div>
+                  <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", alignItems: "start" }}>
+                    <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px" }}>
+                      <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Capacidad</p>
+                      <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{selectedTable.seats} personas</p>
+                    </div>
+                    <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px" }}>
+                      <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Reserva activa</p>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: selectedTable.status === "occupied" || selectedTable.status === "reserved" ? "#0f172a" : "#64748b" }}>
+                        {selectedTable.status === "occupied" ? "En curso" : selectedTable.status === "reserved" ? "Reservada" : "Sin reserva activa"}
+                      </p>
+                    </div>
+                    <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px" }}>
+                      <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Estado actual</p>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{selectedTable.status === "available" ? "Libre" : selectedTable.status === "occupied" ? "Ocupada" : "Reservada"}</p>
+                    </div>
+                  </div>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 600, color: "#334155" }}>
+                    Notas del turno
+                    <textarea
+                      value={selectedTable.notes || ""}
+                      onChange={(e) => updateTableNotes(selectedTable.id, e.target.value)}
+                      rows={3}
+                      placeholder="Ej. Mesa para cliente VIP, alergias, prioridad..."
+                      style={{ ...inputStyle, resize: "vertical", minHeight: 78, marginBottom: 0 }}
+                    />
+                  </label>
                 </div>
               )}
 
@@ -1040,6 +1234,21 @@ export default function RestaurantDashboard({ restaurants, onBack, onLogout, onS
                     placeholder={getLayoutElementLabel(selectedLayoutElement)}
                     style={{ ...inputStyle, marginBottom: 0, minHeight: 44, width: "100%", maxWidth: 340, whiteSpace: "normal" }}
                   />
+                  {selectedLayoutElement.type === "zone" && (
+                    <label style={{ fontSize: 13, fontWeight: 600, color: "#7c2d12" }}>
+                      Tipo de zona
+                      <select
+                        value={selectedLayoutElement.subtype || "bar"}
+                        onChange={(e) => updateLayoutElementSubtype(selectedLayoutElement.id, e.target.value)}
+                        style={{ ...inputStyle, marginTop: 4, marginBottom: 0, width: "100%" }}
+                      >
+                        <option value="bar">Bar</option>
+                        <option value="terrace">Terraza</option>
+                        <option value="kitchen">Cocina</option>
+                        <option value="vip">VIP</option>
+                      </select>
+                    </label>
+                  )}
                   {selectedLayoutElement.type === "stairs" && (
                     <label style={{ fontSize: 13, fontWeight: 600, color: "#7c2d12" }}>
                       Tamaño de escalera

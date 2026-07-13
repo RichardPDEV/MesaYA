@@ -1,23 +1,26 @@
-export function createLayoutElement(type, x, y, floor = 1, customLabel = null) {
+export function createLayoutElement(type, x, y, floor = 1, customLabel = null, extraProps = {}) {
   const base = {
     id: `EL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type,
     x,
     y,
     floor,
+    ...extraProps,
   };
 
   switch (type) {
     case "door":
-      return { ...base, width: 56, height: 24, label: customLabel || "Puerta" };
+      return { ...base, width: 56, height: 24, label: customLabel || base.label || "Puerta" };
     case "window":
-      return { ...base, width: 70, height: 24, label: customLabel || "Ventana" };
+      return { ...base, width: 70, height: 24, label: customLabel || base.label || "Ventana" };
     case "stairs":
-      return { ...base, width: 64, height: 64, label: customLabel || "Escaleras" };
+      return { ...base, width: 64, height: 64, label: customLabel || base.label || "Escaleras" };
     case "floor":
-      return { ...base, width: 180, height: 100, level: 2, label: customLabel || "Piso 2" };
+      return { ...base, width: 180, height: 100, level: 2, label: customLabel || base.label || "Piso 2" };
+    case "zone":
+      return { ...base, width: 92, height: 58, label: customLabel || base.label || "Zona" };
     default:
-      return base;
+      return { ...base, width: 92, height: 58 };
   }
 }
 
