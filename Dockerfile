@@ -16,5 +16,5 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 CMD wget -qO- http://127.0.0.1:8080/actuator/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 CMD wget -qO- http://127.0.0.1:8080/api/health || exit 1
 ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]

@@ -10,12 +10,14 @@ spring:
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:2525}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: false
+          auth: ${MAIL_SMTP_AUTH:true}
           starttls:
-            enable: false
+            enable: ${MAIL_SMTP_STARTTLS:true}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -39,6 +41,9 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    mail:
+      enabled: false
 
 logging:
   level:

@@ -27,15 +27,16 @@ spring:
   cache:
     type: simple
   mail:
-    host: ${MAIL_HOST:}
-    port: ${MAIL_PORT:25}
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:2525}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: ${MAIL_SMTP_AUTH:false}
-          starttls.enable: ${MAIL_SMTP_STARTTLS:false}
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
 
 management:
   endpoints:
@@ -47,6 +48,9 @@ management:
       probes:
         enabled: true
       show-details: never
+  health:
+    mail:
+      enabled: false
 
 logging:
   level:

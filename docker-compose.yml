@@ -27,6 +27,13 @@ services:
       - APP_COOKIE_SECURE=false
       - APP_COOKIE_SAMESITE=Lax
       - SPRING_PROFILES_ACTIVE=prod
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_SMTP_AUTH=${MAIL_SMTP_AUTH}
+      - MAIL_SMTP_STARTTLS=${MAIL_SMTP_STARTTLS}
+      - MAIL_FROM=${MAIL_FROM}
     depends_on:
       postgres:
         condition: service_healthy
