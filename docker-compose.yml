@@ -23,7 +23,7 @@ services:
       - DB_URL=jdbc:postgresql://postgres:5432/reservas
       - DB_USERNAME=reservas
       - DB_PASSWORD=reservas
-      - APP_JWT_SECRET=dev-secret-key-1234567890-abcdef
+      - APP_JWT_SECRET=${APP_JWT_SECRET}
       - APP_COOKIE_SECURE=false
       - APP_COOKIE_SAMESITE=Lax
       - SPRING_PROFILES_ACTIVE=prod
