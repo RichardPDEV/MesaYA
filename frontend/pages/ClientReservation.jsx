@@ -99,6 +99,8 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const [loadingReservations, setLoadingReservations] = useState(false);
   const [reservationLoadError, setReservationLoadError] = useState("");
   const [availabilityWindows, setAvailabilityWindows] = useState([]);
+  const [isSubmittingReservation, setIsSubmittingReservation] = useState(false);
+  const [feedback, setFeedback] = useState(null);
   const [availabilityMessage, setAvailabilityMessage] = useState("");
   const [requestedIntervalAvailable, setRequestedIntervalAvailable] = useState(true);
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
@@ -298,6 +300,12 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   }, []);
 
   useEffect(() => {
+    if (!feedback) return;
+    const timerId = window.setTimeout(() => setFeedback(null), 4000);
+    return () => window.clearTimeout(timerId);
+  }, [feedback]);
+
+  useEffect(() => {
     if (!reminderEnabled || typeof window === "undefined") return;
 
     const upcomingEntries = [...myReservations, ...savedReservations]
@@ -493,8 +501,36 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
     setStep(2);
   };
 
+  const showDesktopNotification = async (title, message) => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (window.Notification.permission !== "granted") return;
+
+    try {
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        registration.showNotification(title, {
+          body: message,
+          icon: "/favicon.svg",
+          tag: title,
+        });
+      } else {
+        new window.Notification(title, {
+          body: message,
+          icon: "/favicon.svg",
+          tag: title,
+        });
+      }
+    } catch {
+      // ignore notification errors
+    }
+  };
+
   const handleConfirm = async () => {
     if (!canReviewReservation) return;
+    setIsSubmittingReservation(true);
+    setProfileError("");
+    setFeedback({ type: "info", message: "Confirmando tu reserva. Por favor espera..." });
+
     try {
       let created;
       let reservationSummary;
@@ -562,11 +598,22 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
         await loadMyReservations();
       }
       setReservationToReschedule(null);
+      const successMessage = reservationToReschedule?.id
+        ? `Tu reserva se reprogramó correctamente para ${date} a las ${time}.`
+        : `Tu reserva quedó confirmada para ${date} a las ${time}.`;
+      setFeedback({
+        type: "success",
+        message: successMessage,
+      });
+      await showDesktopNotification("Reserva confirmada", successMessage);
       setStep(3);
     } catch (err) {
       await loadAvailability();
+      setFeedback({ type: "error", message: err.message || "No se pudo confirmar la reserva. Inténtalo de nuevo." });
       setProfileError(err.message || "No se pudo confirmar la reserva");
       setStep(2);
+    } finally {
+      setIsSubmittingReservation(false);
     }
   };
 
@@ -616,6 +663,7 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
   const handleCancelReservation = async (reservationId) => {
     if (!reservationId) return;
     setCancelingReservationId(reservationId);
+    setFeedback({ type: "info", message: "Cancelando tu reserva..." });
     try {
       await requestJson(`${API_BASE_URL}/v1/reservations/${reservationId}/cancel`, {
         method: "PATCH",
@@ -623,10 +671,14 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
       });
       setMyReservations((current) => current.map((reservation) => reservation.id === reservationId ? { ...reservation, status: "CANCELLED" } : reservation));
       setSavedReservations((current) => current.map((reservation) => reservation.id === reservationId ? { ...reservation, status: "CANCELLED" } : reservation));
-      setReminderMessage("Tu reserva se canceló correctamente. Puedes volver a reservar cuando quieras.");
+      const cancelMessage = "Tu reserva se canceló correctamente. Puedes volver a reservar cuando quieras.";
+      setReminderMessage(cancelMessage);
+      setFeedback({ type: "success", message: cancelMessage });
+      await showDesktopNotification("Reserva cancelada", cancelMessage);
       await loadMyReservations();
       setProfileError("");
     } catch (err) {
+      setFeedback({ type: "error", message: err.message || "No se pudo cancelar la reserva." });
       setProfileError(err.message || "No se pudo cancelar la reserva");
     } finally {
       setCancelingReservationId(null);
@@ -893,6 +945,24 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
             </div>
           )}
 
+          {(loadingReservations || reservationLoadError) ? (
+            <div style={{ marginTop: 16, background: reservationLoadError ? "#fef2f2" : "#eff6ff", border: `1px solid ${reservationLoadError ? "#fecaca" : "#bfdbfe"}`, borderRadius: 14, padding: "14px 16px" }}>
+              <p style={{ margin: 0, fontWeight: 700, color: reservationLoadError ? "#991b1b" : "#1d4ed8", fontSize: 14 }}>
+                {loadingReservations ? "Actualizando disponibilidad..." : "No se pudo cargar la disponibilidad"}
+              </p>
+              <p style={{ margin: "8px 0 0", color: reservationLoadError ? "#7f1d1d" : "#1e3a8a", fontSize: 13, lineHeight: 1.5 }}>
+                {loadingReservations ? "Por favor espera mientras se cargan las mesas disponibles para la fecha seleccionada." : reservationLoadError}
+              </p>
+            </div>
+          ) : (
+            <div style={{ marginTop: 16, background: "#ecfdf5", border: "1px solid #86efac", borderRadius: 14, padding: "12px 14px" }}>
+              <p style={{ margin: 0, fontWeight: 700, color: "#166534", fontSize: 14 }}>Disponibilidad actualizada</p>
+              <p style={{ margin: "8px 0 0", color: "#134e4a", fontSize: 13, lineHeight: 1.5 }}>
+                Los datos de mesas y horarios se están renovando automáticamente para mostrar el estado más reciente.
+              </p>
+            </div>
+          )}
+
           <div style={{ marginTop: 16, background: "#fefce8", border: "1px solid #fde68a", borderRadius: 14, padding: "12px 14px" }}>
             <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#92400e" }}>Estado del cliente</p>
             <p style={{ margin: 0, color: "#78350f", fontSize: 13 }}>
@@ -906,6 +976,27 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
           <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
             {step === 2 ? "Revisa tu reserva" : "Datos de la reserva"}
           </h3>
+
+          {feedback && step !== 3 ? (
+            <div style={{ marginBottom: 14, borderRadius: 12, padding: "12px 14px", border: `1px solid ${feedback.type === "error" ? "#fecaca" : feedback.type === "success" ? "#a7f3d0" : "#bfdbfe"}`, background: feedback.type === "error" ? "#fef2f2" : feedback.type === "success" ? "#f0fdf4" : "#eff6ff", color: feedback.type === "error" ? "#991b1b" : feedback.type === "success" ? "#166534" : "#1d4ed8" }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                {feedback.type === "error" ? "Atención" : feedback.type === "success" ? "Confirmado" : "Información"}
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>{feedback.message}</div>
+            </div>
+          ) : null}
+
+          {loadingReservations ? (
+            <div style={{ marginBottom: 14, borderRadius: 12, padding: "10px 12px", border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: 13, fontWeight: 700 }}>
+              Comprobando disponibilidad…
+            </div>
+          ) : null}
+
+          {reservationLoadError ? (
+            <div style={{ marginBottom: 14, borderRadius: 12, padding: "10px 12px", border: "1px solid #fecaca", background: "#fef2f2", color: "#991b1b", fontSize: 13, fontWeight: 700 }}>
+              {reservationLoadError}
+            </div>
+          ) : null}
 
           {step === 2 ? (
             <div>
@@ -925,8 +1016,8 @@ export default function ClientReservation({ restaurant, onBack, onConfirm }) {
                 <button onClick={() => setStep(1)} style={{ flex: 1, background: "#e2e8f0", color: "#0f172a", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
                   Editar
                 </button>
-                <button onClick={handleConfirm} style={{ flex: 1, background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-                  Confirmar reserva
+                <button onClick={handleConfirm} disabled={isSubmittingReservation} style={{ flex: 1, background: isSubmittingReservation ? "#475569" : "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: isSubmittingReservation ? "not-allowed" : "pointer" }}>
+                  {isSubmittingReservation ? "Confirmando..." : "Confirmar reserva"}
                 </button>
               </div>
             </div>
