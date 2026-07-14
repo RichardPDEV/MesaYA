@@ -111,6 +111,24 @@ export function AuthProvider({ children }) {
     return login({ username, password });
   };
 
+  const confirmEmail = async (username, code) => {
+    setAuthError("");
+    await requestJson(`${API_BASE_URL}/auth/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ username, code }),
+    });
+    return true;
+  };
+
+  const resendConfirmation = async (username) => {
+    setAuthError("");
+    await requestJson(`${API_BASE_URL}/auth/resend`, {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    });
+    return true;
+  };
+
   const logout = async () => {
     try {
       await requestJson(`${API_BASE_URL}/auth/logout`, { method: "POST" });
@@ -128,6 +146,8 @@ export function AuthProvider({ children }) {
       authError,
       login,
       register,
+      confirmEmail,
+      resendConfirmation,
       logout,
       refreshSession: bootstrapSession,
     }),

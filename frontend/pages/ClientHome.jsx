@@ -1,14 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { APP_CARD, APP_BORDER, CARD_SHADOW, CARD_SHADOW_HOVER } from "../lib/constants.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) {
-  const { user, isAuthenticated, isLoading, authError: authContextError, login, register, logout } = useAuth();
+  const { user, isAuthenticated, isLoading, authError: authContextError, login, register, logout, confirmEmail, resendConfirmation } = useAuth();
   const [search, setSearch] = useState("");
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [authInfo, setAuthInfo] = useState("");
+  const [pendingConfirmUsername, setPendingConfirmUsername] = useState("");
+  const [authVerificationCode, setAuthVerificationCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const codeInputRef = useRef(null);
   const [authError, setAuthError] = useState("");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [pendingRestaurant, setPendingRestaurant] = useState(null);
@@ -36,11 +44,39 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
     setAuthError("");
     try {
       if (authMode === "register") {
-        await register({ username: authEmail, password: authPassword, displayName: authName });
+        // Basic validations for registration
+        const email = (authEmail || "").trim();
+        // Allow any reasonable email address (so Mailtrap can receive it)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          throw new Error("Por favor usa una dirección de correo válida (ej.: usuario@ejemplo.com)");
+        }
+        if (!authFirstName.trim() || !authLastName.trim()) {
+          throw new Error("Por favor indica nombre y apellido");
+        }
+        if (authPassword !== authConfirmPassword) {
+          throw new Error("Las contraseñas no coinciden");
+        }
+        await register({ username: email, password: authPassword, displayName: `${authFirstName.trim()} ${authLastName.trim()}` });
+        setAuthInfo("Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja o Mailtrap.");
+        setPendingConfirmUsername(email.toLowerCase());
+        setResendCooldown(30);
+        // Clear form fields after successful registration
+        setAuthEmail("");
+        setAuthFirstName("");
+        setAuthLastName("");
+        setAuthPassword("");
+        setAuthConfirmPassword("");
+        setAuthName("");
       } else {
         await login({ username: authEmail, password: authPassword });
       }
-      setAuthPanelOpen(false);
+      // Keep auth panel open after registration so user can enter confirmation code
+      if (authMode === "register") {
+        setAuthPanelOpen(true);
+      } else {
+        setAuthPanelOpen(false);
+      }
       setProfileError("");
       if (pendingRestaurant) {
         const toOpen = pendingRestaurant;
@@ -48,9 +84,59 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
         onSelectRestaurant?.(toOpen);
       }
     } catch (err) {
-      setAuthError(err.message || "No se pudo iniciar sesión");
+      setAuthInfo("");
+      setAuthError(err.message || "No se pudo procesar la solicitud");
     }
   };
+
+  const handleConfirmCode = async (e) => {
+    e?.preventDefault?.();
+    setAuthError("");
+    try {
+      if (!pendingConfirmUsername) throw new Error("Usuario desconocido para confirmar");
+      if (!authVerificationCode || !authVerificationCode.trim()) throw new Error("Introduce el código de verificación");
+      await confirmEmail(pendingConfirmUsername, authVerificationCode.trim());
+      setAuthInfo("Correo verificado correctamente. Ya puedes usar tu cuenta.");
+      setPendingConfirmUsername("");
+      setAuthVerificationCode("");
+      setResendCooldown(0);
+    } catch (err) {
+      setAuthError(err.message || "No se pudo confirmar el código");
+    }
+  };
+
+  const handleResendCode = async () => {
+    setAuthError("");
+    try {
+      if (!pendingConfirmUsername) throw new Error("Usuario desconocido para reenviar");
+      await resendConfirmation(pendingConfirmUsername);
+      setAuthInfo("Código reenviado. Revisa tu bandeja o Mailtrap.");
+      setResendCooldown(30);
+    } catch (err) {
+      setAuthError(err.message || "No se pudo reenviar el código");
+    }
+  };
+
+  useEffect(() => {
+    if (!resendCooldown || resendCooldown <= 0) return;
+    const id = setInterval(() => {
+      setResendCooldown((s) => {
+        if (s <= 1) {
+          clearInterval(id);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [resendCooldown]);
+
+  useEffect(() => {
+    if (pendingConfirmUsername && authPanelOpen) {
+      // small timeout to ensure input is mounted
+      setTimeout(() => codeInputRef.current?.focus?.(), 50);
+    }
+  }, [pendingConfirmUsername, authPanelOpen]);
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #f8fafc 0%, #fefefe 100%)" }}>
@@ -124,8 +210,15 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
               <form onSubmit={(e) => { handleAuthSubmit(e); }}>
                 {authMode === "register" && (
                   <>
-                    <div style={{ marginBottom: 8 }}><label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Tu nombre</label>
-                      <input value={authName} onChange={(e) => setAuthName(e.target.value)} placeholder="Nombre completo" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, marginBottom: 12 }} />
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Nombre</label>
+                        <input value={authFirstName} onChange={(e) => setAuthFirstName(e.target.value)} placeholder="Nombre" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}` }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Apellido</label>
+                        <input value={authLastName} onChange={(e) => setAuthLastName(e.target.value)} placeholder="Apellido" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}` }} />
+                      </div>
                     </div>
                   </>
                 )}
@@ -137,7 +230,21 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
                   <label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Contraseña</label>
                   <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, marginBottom: 8 }} />
                 </div>
+                {authMode === "register" && (
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={{ display: "block", fontSize: 13, color: "#475569", marginBottom: 6 }}>Confirmar contraseña</label>
+                    <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="Repite tu contraseña" style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, marginBottom: 8 }} />
+                  </div>
+                )}
                 {authError ? <p style={{ color: "#dc2626", fontSize: 13, margin: "6px 0 12px" }}>{authError}</p> : null}
+                {authInfo ? <p style={{ color: "#0f5132", fontSize: 13, margin: "6px 0 12px" }}>{authInfo}</p> : null}
+                {pendingConfirmUsername ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+                    <input ref={codeInputRef} value={authVerificationCode} onChange={(e) => setAuthVerificationCode(e.target.value)} placeholder="Código de verificación" style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${APP_BORDER}`, flex: 1 }} />
+                    <button type="button" onClick={(e) => { handleConfirmCode(e); }} style={{ background: "#0f172a", color: "white", border: "none", borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
+                    <button type="button" onClick={handleResendCode} disabled={resendCooldown > 0} style={{ background: "#e6eef8", color: "#0f172a", border: "none", borderRadius: 10, padding: "10px 14px", cursor: resendCooldown > 0 ? "not-allowed" : "pointer", fontWeight: 700, opacity: resendCooldown > 0 ? 0.6 : 1 }}>{resendCooldown > 0 ? `Reenviar (${resendCooldown}s)` : "Reenviar"}</button>
+                  </div>
+                ) : null}
                 <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
                   <button type="submit" style={{ flex: 1, background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
                     {authMode === "register" ? "Crear cuenta y entrar" : "Entrar"}
