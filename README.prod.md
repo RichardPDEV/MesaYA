@@ -53,13 +53,13 @@ npm run build
 Sube el JAR generado por el backend y los archivos de la carpeta frontend/dist a tus rutas correspondientes, o sirve el frontend con Nginx/Apache y apunta la API a tu subdominio.
 
 ## Correo de confirmación de usuarios
-Configura estas variables para los correos:
+Configura estas variables para los correos usando Resend SMTP:
 
 ```bash
-MAIL_HOST=smtp.tuservidor.com
+MAIL_HOST=smtp.resend.com
 MAIL_PORT=587
-MAIL_USERNAME=usuario
-MAIL_PASSWORD=secreto
+MAIL_USERNAME=apikey
+MAIL_PASSWORD=tu-resend-api-key
 MAIL_SMTP_AUTH=true
 MAIL_SMTP_STARTTLS=true
 MAIL_FROM=reservas@tu-dominio.com

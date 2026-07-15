@@ -122,6 +122,13 @@ public class Application {
 Variables de entorno habituales:
 - `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`
 - `SPRING_FLYWAY_ENABLED=true`
+- `MAIL_HOST=smtp.resend.com`
+- `MAIL_PORT=587`
+- `MAIL_USERNAME=apikey`
+- `MAIL_PASSWORD=tu-resend-api-key`
+- `MAIL_SMTP_AUTH=true`
+- `MAIL_SMTP_STARTTLS=true`
+- `MAIL_FROM=reservas@tu-dominio.com`
 
 ---
 

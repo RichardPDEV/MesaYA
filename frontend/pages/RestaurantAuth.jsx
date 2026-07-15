@@ -30,7 +30,7 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
       // can enter the verification code sent by email. onRegister will be called after confirm.
       setPendingConfirmUsername(registerForm.email.toLowerCase());
       setResendCooldown(30);
-      setStatus('Se ha enviado un código de verificación al correo proporcionado. Revisa Mailtrap.');
+      setStatus('Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja de entrada.');
     } catch (err) {
       setStatus(err.message || "Error al registrar");
     }
@@ -59,7 +59,7 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
     try {
       if (!pendingConfirmUsername) throw new Error('Usuario desconocido para reenviar');
       await requestJson(`${API_BASE_URL}/auth/resend`, { method: 'POST', body: JSON.stringify({ username: pendingConfirmUsername }) });
-      setStatus('Código reenviado. Revisa Mailtrap.');
+      setStatus('Código reenviado. Revisa tu bandeja de entrada.');
       setResendCooldown(30);
     } catch (err) {
       setStatus(err.message || 'No se pudo reenviar el código');

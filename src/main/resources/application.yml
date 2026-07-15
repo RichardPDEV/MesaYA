@@ -19,6 +19,9 @@ spring:
           starttls:
             enable: ${MAIL_SMTP_STARTTLS:true}
   jpa:
+  app:
+    mail:
+      from: ${MAIL_FROM:reservas@example.com}
     hibernate:
       ddl-auto: validate
     properties:

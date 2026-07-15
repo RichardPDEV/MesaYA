@@ -46,7 +46,7 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
       if (authMode === "register") {
         // Basic validations for registration
         const email = (authEmail || "").trim();
-        // Allow any reasonable email address (so Mailtrap can receive it)
+        // Allow any reasonable email address for verification
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
           throw new Error("Por favor usa una dirección de correo válida (ej.: usuario@ejemplo.com)");
@@ -58,7 +58,7 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
           throw new Error("Las contraseñas no coinciden");
         }
         await register({ username: email, password: authPassword, displayName: `${authFirstName.trim()} ${authLastName.trim()}` });
-        setAuthInfo("Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja o Mailtrap.");
+        setAuthInfo("Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja de entrada.");
         setPendingConfirmUsername(email.toLowerCase());
         setResendCooldown(30);
         // Clear form fields after successful registration
@@ -110,7 +110,7 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
     try {
       if (!pendingConfirmUsername) throw new Error("Usuario desconocido para reenviar");
       await resendConfirmation(pendingConfirmUsername);
-      setAuthInfo("Código reenviado. Revisa tu bandeja o Mailtrap.");
+      setAuthInfo("Código reenviado. Revisa tu bandeja de entrada.");
       setResendCooldown(30);
     } catch (err) {
       setAuthError(err.message || "No se pudo reenviar el código");
