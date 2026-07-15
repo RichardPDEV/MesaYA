@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { API_BASE_URL, APP_CARD, APP_BORDER, CARD_SHADOW } from "../lib/constants.js";
-import { setAccessToken, requestJson } from "../lib/api.js";
+import React, { useState } from "react";
+import { APP_CARD, APP_BORDER, CARD_SHADOW } from "../lib/constants.js";
 import { Label, inputStyle } from "../components/FormFields.jsx";
 
 export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessage }) {
@@ -8,94 +7,22 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
   const [registerForm, setRegisterForm] = useState({ name: "", cuisine: "", address: "", phone: "", email: "", password: "", description: "" });
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [status, setStatus] = useState("");
-  const [pendingConfirmUsername, setPendingConfirmUsername] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const codeRef = useRef(null);
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setStatus("");
     try {
-      // First register user on backend
-      try {
-        await requestJson(`${API_BASE_URL}/auth/register`, { method: 'POST', body: JSON.stringify({ username: registerForm.email, password: registerForm.password, displayName: registerForm.name }) });
-      } catch (regErr) {
-        // ignore, may already exist
-      }
-      // Login to obtain access token + refresh cookie
-      const loginResp = await requestJson(`${API_BASE_URL}/auth/login`, { method: 'POST', body: JSON.stringify({ username: registerForm.email, password: registerForm.password }) });
-      if (loginResp?.token) setAccessToken(loginResp.token);
-      // Instead of immediately calling onRegister, show confirmation input so the restaurant
-      // can enter the verification code sent by email. onRegister will be called after confirm.
-      setPendingConfirmUsername(registerForm.email.toLowerCase());
-      setResendCooldown(30);
-      setStatus('Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja de entrada.');
+      await onRegister(registerForm);
+      setStatus('Registro de restaurante completado. Redirigiendo...');
     } catch (err) {
       setStatus(err.message || "Error al registrar");
     }
   };
 
-  const handleConfirmCode = async (e) => {
-    e?.preventDefault?.();
-    setStatus("");
-    try {
-      if (!pendingConfirmUsername) throw new Error('Usuario desconocido para confirmar');
-      if (!verificationCode || !verificationCode.trim()) throw new Error('Introduce el código de verificación');
-      await requestJson(`${API_BASE_URL}/auth/confirm`, { method: 'POST', body: JSON.stringify({ username: pendingConfirmUsername, code: verificationCode.trim() }) });
-      setStatus('Correo verificado correctamente. Redirigiendo...');
-      // show success for 2s then proceed to register/redirect to dashboard
-      setTimeout(() => {
-        // call onRegister and handle possible errors
-        Promise.resolve(onRegister(registerForm)).catch((err) => setStatus(err?.message || 'Error al completar registro'));
-      }, 2000);
-    } catch (err) {
-      setStatus(err.message || 'No se pudo confirmar el código');
-    }
-  };
-
-  const handleResendCode = async () => {
-    setStatus("");
-    try {
-      if (!pendingConfirmUsername) throw new Error('Usuario desconocido para reenviar');
-      await requestJson(`${API_BASE_URL}/auth/resend`, { method: 'POST', body: JSON.stringify({ username: pendingConfirmUsername }) });
-      setStatus('Código reenviado. Revisa tu bandeja de entrada.');
-      setResendCooldown(30);
-    } catch (err) {
-      setStatus(err.message || 'No se pudo reenviar el código');
-    }
-  };
-
-  useEffect(() => {
-    if (!resendCooldown || resendCooldown <= 0) return;
-    const id = setInterval(() => {
-      setResendCooldown((s) => {
-        if (s <= 1) {
-          clearInterval(id);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [resendCooldown]);
-
-  useEffect(() => {
-    if (pendingConfirmUsername) setTimeout(() => codeRef.current?.focus?.(), 50);
-  }, [pendingConfirmUsername]);
-
   const handleLogin = async (e) => {
     e.preventDefault();
     setStatus("");
     try {
-      // Attempt server login first
-      try {
-        const resp = await requestJson(`${API_BASE_URL}/auth/login`, { method: 'POST', body: JSON.stringify({ username: loginForm.email, password: loginForm.password }) });
-        if (resp?.token) setAccessToken(resp.token);
-      } catch (err) {
-        // fallback to local login if server not available
-        console.warn('Server login failed, falling back to local accounts', err);
-      }
       await onLogin(loginForm);
     } catch (err) {
       setStatus(err.message || "Email o contraseña incorrectos");
@@ -153,13 +80,6 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
               <textarea value={registerForm.description} onChange={(e) => setRegisterForm((p) => ({ ...p, description: e.target.value }))} placeholder="Describe tu restaurante…" rows={3} style={{ ...inputStyle, resize: "vertical" }} />
               <button type="submit" style={{ width: "100%", background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>Registrar restaurante</button>
             </form>
-            {pendingConfirmUsername ? (
-              <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input ref={codeRef} value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} placeholder="Código de verificación" style={{ ...inputStyle, flex: 1 }} />
-                <button type="button" onClick={handleConfirmCode} style={{ background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "12px 14px", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
-                <button type="button" onClick={handleResendCode} disabled={resendCooldown>0} style={{ background: "#e6eef8", color: "#0f172a", border: "none", borderRadius: 12, padding: "12px 14px", cursor: resendCooldown>0? 'not-allowed':'pointer', fontWeight: 700, opacity: resendCooldown>0?0.6:1 }}>{resendCooldown>0?`Reenviar (${resendCooldown}s)`:'Reenviar'}</button>
-              </div>
-            ) : null}
             </>
           )}
 

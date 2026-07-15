@@ -108,7 +108,7 @@ export function AuthProvider({ children }) {
       method: "POST",
       body: JSON.stringify({ username, password, displayName }),
     });
-    return login({ username, password });
+    return true;
   };
 
   const confirmEmail = async (username, code) => {

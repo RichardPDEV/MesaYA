@@ -14,6 +14,7 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
   const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [authInfo, setAuthInfo] = useState("");
   const [pendingConfirmUsername, setPendingConfirmUsername] = useState("");
+  const [pendingConfirmPassword, setPendingConfirmPassword] = useState("");
   const [authVerificationCode, setAuthVerificationCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const codeInputRef = useRef(null);
@@ -60,6 +61,7 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
         await register({ username: email, password: authPassword, displayName: `${authFirstName.trim()} ${authLastName.trim()}` });
         setAuthInfo("Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja de entrada.");
         setPendingConfirmUsername(email.toLowerCase());
+        setPendingConfirmPassword(authPassword);
         setResendCooldown(30);
         // Clear form fields after successful registration
         setAuthEmail("");
@@ -96,10 +98,13 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
       if (!pendingConfirmUsername) throw new Error("Usuario desconocido para confirmar");
       if (!authVerificationCode || !authVerificationCode.trim()) throw new Error("Introduce el código de verificación");
       await confirmEmail(pendingConfirmUsername, authVerificationCode.trim());
-      setAuthInfo("Correo verificado correctamente. Ya puedes usar tu cuenta.");
+      await login({ username: pendingConfirmUsername, password: pendingConfirmPassword });
+      setAuthInfo("Correo verificado correctamente. Ya estás conectado.");
       setPendingConfirmUsername("");
+      setPendingConfirmPassword("");
       setAuthVerificationCode("");
       setResendCooldown(0);
+      setAuthPanelOpen(false);
     } catch (err) {
       setAuthError(err.message || "No se pudo confirmar el código");
     }

@@ -82,7 +82,8 @@ public class UserService {
     }
 
     public Optional<User> authenticate(String username, String password) {
-        return userRepo.findByUsername(username).filter(u -> passwordEncoder.matches(password, u.getPasswordHash()));
+        return userRepo.findByUsername(username)
+            .filter(u -> passwordEncoder.matches(password, u.getPasswordHash()) && u.isEmailVerified());
     }
 
     public void saveRefreshToken(Long userId, String refreshToken) {
