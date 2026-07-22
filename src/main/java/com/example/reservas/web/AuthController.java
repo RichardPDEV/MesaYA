@@ -32,6 +32,9 @@ public class AuthController {
     @Value("${APP_COOKIE_DOMAIN:}")
     private String cookieDomain = "";
 
+    @Value("${app.auth.debug-confirmation-code:false}")
+    private boolean debugConfirmationCode = false;
+
     public AuthController(UserService userService, JwtUtil jwtUtil) { this.userService = userService; this.jwtUtil = jwtUtil; }
 
     @PostMapping("/register")
@@ -44,12 +47,16 @@ public class AuthController {
         }
 
         var u = userService.register(username, password, displayName);
-        return ResponseEntity.ok().body(java.util.Map.of(
-                "id", u.getId(),
-                "username", u.getUsername(),
-                "displayName", u.getDisplayName(),
-                "role", u.getRole().name()
-        ));
+        var body = new java.util.LinkedHashMap<String, Object>();
+        body.put("id", u.getId());
+        body.put("username", u.getUsername());
+        body.put("displayName", u.getDisplayName());
+        body.put("role", u.getRole().name());
+        body.put("requiresEmailConfirmation", true);
+        if (debugConfirmationCode && u.getConfirmationCode() != null) {
+            body.put("confirmationCode", u.getConfirmationCode());
+        }
+        return ResponseEntity.ok().body(body);
     }
 
     @PostMapping("/login")

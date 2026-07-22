@@ -20,7 +20,7 @@ public class EmailService {
         this.mailSender = mailSender;
     }
 
-    public void sendConfirmationCode(String to, String code) {
+    public boolean sendConfirmationCode(String to, String code) {
         try {
             SimpleMailMessage msg = new SimpleMailMessage();
             msg.setFrom(fromAddress);
@@ -29,9 +29,11 @@ public class EmailService {
             msg.setText(String.format("Tu código de confirmación es: %s\nSi no solicitaste este código, ignora este correo.", code));
             mailSender.send(msg);
             log.info("Sent confirmation code to {}", to);
+            return true;
         } catch (Exception ex) {
             log.error("Failed to send confirmation email to {}", to, ex);
             log.error("Mail send error details:", ex);
+            return false;
         }
     }
 }

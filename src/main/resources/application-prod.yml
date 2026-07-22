@@ -65,3 +65,5 @@ logging:
 app:
   mail:
     from: ${MAIL_FROM:reservas@example.com}
+  auth:
+    debug-confirmation-code: ${APP_AUTH_DEBUG_CONFIRMATION_CODE:false}

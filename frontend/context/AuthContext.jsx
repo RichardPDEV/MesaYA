@@ -104,11 +104,11 @@ export function AuthProvider({ children }) {
 
   const register = async ({ username, password, displayName }) => {
     setAuthError("");
-    await requestJson(`${API_BASE_URL}/auth/register`, {
+    const payload = await requestJson(`${API_BASE_URL}/auth/register`, {
       method: "POST",
       body: JSON.stringify({ username, password, displayName }),
     });
-    return true;
+    return payload;
   };
 
   const confirmEmail = async (username, code) => {

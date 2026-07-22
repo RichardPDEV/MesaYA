@@ -58,10 +58,18 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
         if (authPassword !== authConfirmPassword) {
           throw new Error("Las contraseñas no coinciden");
         }
-        await register({ username: email, password: authPassword, displayName: `${authFirstName.trim()} ${authLastName.trim()}` });
-        setAuthInfo("Se ha enviado un código de verificación al correo proporcionado. Revisa tu bandeja de entrada.");
+        const registrationResult = await register({ username: email, password: authPassword, displayName: `${authFirstName.trim()} ${authLastName.trim()}` });
+        const confirmationCode = registrationResult?.confirmationCode || "";
+        setAuthInfo(
+          confirmationCode
+            ? `Se ha creado la cuenta. Tu código de verificación es ${confirmationCode}.` 
+            : "Se ha creado la cuenta. Revisa tu correo para obtener el código de verificación."
+        );
         setPendingConfirmUsername(email.toLowerCase());
         setPendingConfirmPassword(authPassword);
+        if (confirmationCode) {
+          setAuthVerificationCode(confirmationCode);
+        }
         setResendCooldown(30);
         // Clear form fields after successful registration
         setAuthEmail("");
