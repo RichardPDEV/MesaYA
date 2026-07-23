@@ -22,18 +22,30 @@ public class EmailService {
 
     public boolean sendConfirmationCode(String to, String code) {
         try {
+            String resolvedFrom = normalizeFromAddress(fromAddress);
             SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(fromAddress);
+            msg.setFrom(resolvedFrom);
             msg.setTo(to);
             msg.setSubject("Código de confirmación");
             msg.setText(String.format("Tu código de confirmación es: %s\nSi no solicitaste este código, ignora este correo.", code));
             mailSender.send(msg);
-            log.info("Sent confirmation code to {}", to);
+            log.info("Sent confirmation code from {} to {}", resolvedFrom, to);
             return true;
         } catch (Exception ex) {
             log.error("Failed to send confirmation email to {}", to, ex);
             log.error("Mail send error details:", ex);
             return false;
         }
+    }
+
+    private String normalizeFromAddress(String configuredAddress) {
+        if (configuredAddress == null || configuredAddress.isBlank()) {
+            return "onboarding@resend.dev";
+        }
+        String trimmed = configuredAddress.trim();
+        if (trimmed.contains("example.com") || trimmed.contains("gmail.com")) {
+            return "onboarding@resend.dev";
+        }
+        return trimmed;
     }
 }
