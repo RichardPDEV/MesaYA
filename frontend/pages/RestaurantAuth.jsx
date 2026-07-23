@@ -1,19 +1,48 @@
 import React, { useState } from "react";
-import { APP_CARD, APP_BORDER, CARD_SHADOW } from "../lib/constants.js";
+import { APP_CARD, APP_BORDER, CARD_SHADOW, API_BASE_URL } from "../lib/constants.js";
 import { Label, inputStyle } from "../components/FormFields.jsx";
+import { requestJson, setAccessToken } from "../lib/api.js";
 
 export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessage }) {
   const [mode, setMode] = useState("login");
   const [registerForm, setRegisterForm] = useState({ name: "", cuisine: "", address: "", phone: "", email: "", password: "", description: "" });
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [status, setStatus] = useState("");
+  const [pendingConfirmEmail, setPendingConfirmEmail] = useState("");
+  const [pendingConfirmPassword, setPendingConfirmPassword] = useState("");
+  const [pendingRegistrationData, setPendingRegistrationData] = useState(null);
+  const [confirmCode, setConfirmCode] = useState("");
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setStatus("");
     try {
-      await onRegister(registerForm);
-      setStatus('Registro de restaurante completado. Redirigiendo...');
+      const email = (registerForm.email || "").trim().toLowerCase();
+      const password = registerForm.password || "";
+      const name = (registerForm.name || "").trim();
+      if (!email || !password || !name) {
+        throw new Error("Completa los campos obligatorios");
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error("Introduce un email válido para la cuenta del restaurante");
+      }
+
+      const payload = await requestJson(`${API_BASE_URL}/auth/register`, {
+        method: "POST",
+        body: JSON.stringify({ username: email, password, displayName: name }),
+      });
+
+      setPendingRegistrationData({ ...registerForm, email, password, name });
+      setPendingConfirmEmail(email);
+      setPendingConfirmPassword(password);
+      setConfirmCode(payload?.confirmationCode || "");
+      setMode("confirm");
+      setStatus(
+        payload?.confirmationCode
+          ? `Se generó el código: ${payload.confirmationCode}. Introduce el código para continuar.`
+          : "Registro iniciado. Revisa tu correo para el código de confirmación."
+      );
     } catch (err) {
       setStatus(err.message || "Error al registrar");
     }
@@ -26,6 +55,62 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
       await onLogin(loginForm);
     } catch (err) {
       setStatus(err.message || "Email o contraseña incorrectos");
+    }
+  };
+
+  const handleConfirm = async (e) => {
+    e.preventDefault();
+    setStatus("");
+    try {
+      if (!pendingConfirmEmail) {
+        throw new Error("No hay registro pendiente para confirmar");
+      }
+      const code = (confirmCode || "").trim();
+      if (!code) {
+        throw new Error("Introduce el código de confirmación");
+      }
+      await requestJson(`${API_BASE_URL}/auth/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ username: pendingConfirmEmail, code }),
+      });
+
+      const loginResp = await requestJson(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        body: JSON.stringify({ username: pendingConfirmEmail, password: pendingConfirmPassword }),
+      });
+      const token = loginResp?.token;
+      if (!token) {
+        throw new Error("No se pudo iniciar sesión después de confirmar");
+      }
+      setAccessToken(token);
+      if (!pendingRegistrationData) {
+        throw new Error("No hay datos de registro pendientes");
+      }
+      await onRegister(pendingRegistrationData);
+      setStatus("Registro confirmado y restaurante preparado. Redirigiendo...");
+      setPendingConfirmEmail("");
+      setPendingConfirmPassword("");
+      setPendingRegistrationData(null);
+      setConfirmCode("");
+      setMode("login");
+    } catch (err) {
+      setStatus(err.message || "No se pudo confirmar el código");
+    }
+  };
+
+  const handleResend = async () => {
+    setStatus("");
+    try {
+      if (!pendingConfirmEmail) {
+        throw new Error("No hay registro pendiente para reenviar");
+      }
+      await requestJson(`${API_BASE_URL}/auth/resend`, {
+        method: "POST",
+        body: JSON.stringify({ username: pendingConfirmEmail }),
+      });
+      setStatus("Código reenviado. Revisa tu correo.");
+    } catch (err) {
+      setStatus(err.message || "No se pudo reenviar el código");
     }
   };
 
@@ -61,8 +146,16 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
               <input type="password" value={loginForm.password} onChange={(e) => setLoginForm((p) => ({ ...p, password: e.target.value }))} placeholder="********" style={inputStyle} />
               <button type="submit" style={{ width: "100%", background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>Ingresar</button>
             </form>
+          ) : mode === "confirm" ? (
+            <form onSubmit={handleConfirm}>
+              <Label>Email</Label>
+              <input value={pendingConfirmEmail} readOnly placeholder="correo@restaurante.com" style={{ ...inputStyle, backgroundColor: "#f1f5f9" }} />
+              <Label>Código de confirmación</Label>
+              <input value={confirmCode} onChange={(e) => setConfirmCode(e.target.value)} placeholder="000000" style={inputStyle} />
+              <button type="submit" style={{ width: "100%", background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>Confirmar registro</button>
+              <button type="button" onClick={handleResend} style={{ width: "100%", marginTop: 10, background: "#f8fafc", color: "#0f172a", border: "1px solid #0f172a", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>Reenviar código</button>
+            </form>
           ) : (
-            <>
             <form onSubmit={handleRegister}>
               <Label>Nombre del restaurante</Label>
               <input value={registerForm.name} onChange={(e) => setRegisterForm((p) => ({ ...p, name: e.target.value }))} placeholder="Ej: El Rincón de María" style={inputStyle} />
@@ -80,7 +173,6 @@ export default function RestaurantAuth({ onRegister, onLogin, onBack, errorMessa
               <textarea value={registerForm.description} onChange={(e) => setRegisterForm((p) => ({ ...p, description: e.target.value }))} placeholder="Describe tu restaurante…" rows={3} style={{ ...inputStyle, resize: "vertical" }} />
               <button type="submit" style={{ width: "100%", background: "#0f172a", color: "white", border: "none", borderRadius: 12, padding: "16px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>Registrar restaurante</button>
             </form>
-            </>
           )}
 
           {(status || errorMessage) && (
