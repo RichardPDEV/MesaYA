@@ -88,7 +88,7 @@ export default function ClientHome({ restaurants, onSelectRestaurant, onBack }) 
         setAuthPanelOpen(false);
       }
       setProfileError("");
-      if (pendingRestaurant) {
+      if (authMode !== "register" && pendingRestaurant) {
         const toOpen = pendingRestaurant;
         setPendingRestaurant(null);
         onSelectRestaurant?.(toOpen);
